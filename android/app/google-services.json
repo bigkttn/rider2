@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1017821197856",
+    "project_id": "rider-d206c",
+    "storage_bucket": "rider-d206c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1017821197856:android:d2485beb0ca5cb6cb62e45",
+        "android_client_info": {
+          "package_name": "com.example.blink_delivery_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBiL3Uu-a4RFWnPUuySo-EUiDw9M5Q_R_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1017821197856:android:534a39eca0bf74e4b62e45",
+        "android_client_info": {
+          "package_name": "com.example.my_rider"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBiL3Uu-a4RFWnPUuySo-EUiDw9M5Q_R_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
