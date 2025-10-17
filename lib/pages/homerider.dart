@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'package:blink_delivery_project/model/get_rider_re.dart';
 import 'package:blink_delivery_project/pages/EditRider.dart';
 import 'package:blink_delivery_project/pages/RiderTo.dart';
+import 'package:blink_delivery_project/pages/riderhistory.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -41,6 +42,7 @@ class _HomeriderPageState extends State<HomeriderPage> {
     List<Widget> pages = [
       _buildHomePage(_rider!), // ✅ หน้าแรก
       Ridertopage(uid: widget.uid), // ✅ หน้าที่ต้องไปส่ง
+      Riderhistory(uid: widget.uid), // 🕓 ประวัติการส่ง
     ];
 
     return Scaffold(
@@ -69,6 +71,11 @@ class _HomeriderPageState extends State<HomeriderPage> {
               icon: Icons.delivery_dining,
               label: "ที่ต้องไปส่ง",
               onTap: () => setState(() => _currentIndex = 1),
+            ),
+            BottomNavItem(
+              icon: Icons.history,
+              label: "ประวัติส่ง",
+              onTap: () => setState(() => _currentIndex = 2),
             ),
             BottomNavItem(
               icon: Icons.logout,

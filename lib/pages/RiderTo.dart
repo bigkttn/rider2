@@ -28,6 +28,7 @@ class _RidertopageState extends State<Ridertopage> {
   LatLng? pickupPos;
   LatLng? receiverPos;
   Map<String, dynamic>? currentOrder;
+  bool _isFinished = false; // ✅ ป้องกันการอัปเดตหลังส่งสินค้า
 
   final MapController _mapController = MapController();
 
@@ -43,10 +44,15 @@ class _RidertopageState extends State<Ridertopage> {
     super.dispose();
   }
 
-  /// 🔹 อัปเดตตำแหน่งไรเดอร์ทุก 10 วิ
+  /// 🔹 เริ่มอัปเดตตำแหน่งไรเดอร์ทุก 10 วินาที
   void _startLocationTracking() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      await _updateRiderLocation();
+      if (!_isFinished &&
+          currentOrder != null &&
+          currentOrder!['status'] != 'ไรเดอร์นำส่งสินค้าแล้ว') {
+        await _updateRiderLocation();
+      }
     });
   }
 
@@ -181,20 +187,35 @@ class _RidertopageState extends State<Ridertopage> {
       await FirebaseFirestore.instance
           .collection('orders')
           .doc(currentOrder!['order_id'])
-          .update({'image_delivered': url, 'status': 'ไรเดอร์นำส่งสินค้าแล้ว'});
+          .update({
+            'image_delivered': url,
+            'status': 'ไรเดอร์นำส่งสินค้าแล้ว',
+            'delivered_at': FieldValue.serverTimestamp(),
+          });
 
-      // ✅ ล้างพิกัด Rider
+      // ✅ ตั้งค่าว่า “งานนี้เสร็จแล้ว”
+      _isFinished = true;
+
+      // ✅ หยุดอัปเดตตำแหน่ง
+      _timer?.cancel();
+
+      // ✅ ล้างพิกัด Rider ทันที
       await FirebaseFirestore.instance
           .collection('riders')
           .doc(widget.uid)
-          .update({'latitude': "", 'longitude': ""});
-
-      _timer?.cancel(); // ⛔ หยุดอัปเดตตำแหน่งหลังส่งสินค้าแล้ว
+          .update({
+            'latitude': "",
+            'longitude': "",
+            'last_update': FieldValue.serverTimestamp(),
+          });
 
       setState(() {
         deliveredImage = file;
         currentOrder?['status'] = 'ไรเดอร์นำส่งสินค้าแล้ว';
         currentOrder?['image_delivered'] = url;
+        riderPos = null;
+        pickupPos = null;
+        receiverPos = null;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,8 +269,7 @@ class _RidertopageState extends State<Ridertopage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false, // 🔹 ปิดปุ่มย้อนกลับ
-
+        automaticallyImplyLeading: false,
         title: const Text("จัดการการส่งสินค้า"),
         backgroundColor: const Color(0xFFFF3B30),
       ),
@@ -276,7 +296,7 @@ class _RidertopageState extends State<Ridertopage> {
 
           final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
           currentOrder = data;
-          _fetchAddresses(data); // ✅ ดึงตำแหน่งจาก users
+          _fetchAddresses(data);
 
           final status = data['status'] ?? '';
           final canPickup = (distanceToPickup ?? 9999) <= 20;
