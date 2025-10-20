@@ -40,7 +40,7 @@ class _CreatepageState extends State<Createpage> {
     _loadSender();
   }
 
-  /// โหลดข้อมูลผู้ส่งจาก users/{uid}
+  /// ✅ โหลดข้อมูลผู้ส่ง (รองรับหลายที่อยู่)
   Future<void> _loadSender() async {
     try {
       final userDoc = await FirebaseFirestore.instance
@@ -56,10 +56,44 @@ class _CreatepageState extends State<Createpage> {
           .collection('users')
           .doc(widget.uid.trim())
           .collection('addresses')
-          .limit(1)
           .get();
 
-      if (addrSnap.docs.isNotEmpty) {
+      if (addrSnap.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("ผู้ส่งยังไม่มีที่อยู่ในระบบ")),
+        );
+        return;
+      }
+
+      // 🔹 ถ้ามีหลายที่อยู่ ให้เลือกจาก Dialog
+      if (addrSnap.docs.length > 1) {
+        List<AddressModel> addresses = addrSnap.docs
+            .map((d) => AddressModel.fromMap(d.id, d.data()))
+            .toList();
+
+        AddressModel? selected = await showDialog<AddressModel>(
+          context: context,
+          builder: (context) => SimpleDialog(
+            title: const Text("เลือกที่อยู่ของผู้ส่ง"),
+            children: [
+              for (var addr in addresses)
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, addr),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(addr.address ?? "ไม่ทราบที่อยู่"),
+                  ),
+                ),
+            ],
+          ),
+        );
+
+        if (selected != null) {
+          senderAddress = selected;
+        } else {
+          return; // ถ้ากดยกเลิก
+        }
+      } else {
         senderAddress = AddressModel.fromMap(
           addrSnap.docs.first.id,
           addrSnap.docs.first.data(),
@@ -264,50 +298,65 @@ class _CreatepageState extends State<Createpage> {
   Widget _buildSenderInfo() {
     return Padding(
       padding: const EdgeInsets.only(left: 30.0, bottom: 20),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 320,
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 3),
-              ],
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 25,
-                  backgroundImage: sender?.imageUrl.isNotEmpty == true
-                      ? NetworkImage(sender!.imageUrl)
-                      : const AssetImage("assets/avatar.png") as ImageProvider,
+          Row(
+            children: [
+              Container(
+                width: 320,
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 3),
+                  ],
                 ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        sender?.fullname ?? "ไม่พบชื่อผู้ส่ง",
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundImage: sender?.imageUrl.isNotEmpty == true
+                          ? NetworkImage(sender!.imageUrl)
+                          : const AssetImage("assets/avatar.png")
+                                as ImageProvider,
+                    ),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            sender?.fullname ?? "ไม่พบชื่อผู้ส่ง",
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            senderAddress?.address ?? "ไม่มีที่อยู่",
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        senderAddress?.address ?? "ไม่มีที่อยู่",
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: _loadSender,
+            icon: const Icon(Icons.location_on),
+            label: const Text("เปลี่ยนที่อยู่ผู้ส่ง"),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xffff3b30),
             ),
           ),
         ],
@@ -495,7 +544,7 @@ class _CreatepageState extends State<Createpage> {
     );
   }
 
-  /// ✅ บันทึกทั้งหมดลง Firestore (เพิ่ม latitude / longitude)
+  /// ✅ บันทึกทั้งหมดลง Firestore
   Future<void> _saveAllToFirestore() async {
     if (sender == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -569,8 +618,8 @@ class _CreatepageState extends State<Createpage> {
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
+          children: const [
+            Text(
               "สร้างรายการส่งสินค้า",
               style: TextStyle(
                 fontSize: 26,
