@@ -1,167 +1,287 @@
 import 'dart:io';
-
+import 'package:blink_delivery_project/pages/EditProfile.dart';
+import 'package:blink_delivery_project/pages/addresses_list_page.dart';
+import 'package:blink_delivery_project/pages/login.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:get/get.dart';
 
 class SettingPage extends StatefulWidget {
   final String uid;
-
-  const SettingPage({super.key, required this.uid});
+  final String aid;
+  const SettingPage({super.key, required this.uid, required this.aid});
 
   @override
   State<SettingPage> createState() => _SettingPageState();
 }
 
 class _SettingPageState extends State<SettingPage> {
-  String role = "user"; // ค่าเริ่มต้น: user
-  File? _imageFile;
-  final ImagePicker _picker = ImagePicker();
-  // Firestore
-  var db = FirebaseFirestore.instance;
+  String? _userName;
+  String? _userEmail;
+  String? _profileImageUrl;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _fetchUserData();
+  }
+
+  Future<void> _fetchUserData() async {
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.uid)
+          .get();
+
+      if (userDoc.exists) {
+        setState(() {
+          _userName = userDoc.get('fullname');
+          _userEmail = userDoc.get('email');
+          _profileImageUrl = userDoc.get('profile_photo');
+
+          _isLoading = false;
+        });
+      } else {
+        print("User document does not exist");
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print("Failed to fetch user data: $e");
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(color: const Color(0xFFFF3B30)),
-          Positioned(
-            top: 150,
-            left: 0,
-            right: 0,
-            bottom: 0,
+      backgroundColor: Color(0xffff3b30),
 
-            // พืื้นหลังสีขาว
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(30),
-                  topRight: Radius.circular(30),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : buildProfileContent(),
+    );
+  }
+
+  Widget buildProfileContent() {
+    return Stack(
+      children: [
+        Container(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 90.0, bottom: 0),
+                child: Text(
+                  'การตั้งค่า',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 20, 20, 0),
-                      child: Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.grey[300],
-                          border: Border.all(color: Colors.white, width: 3),
-                          image: _imageFile != null
-                              ? DecorationImage(
-                                  image: FileImage(_imageFile!),
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
-                        ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Container(
+                    height: double.infinity,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(30),
+                        topRight: Radius.circular(30),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          SizedBox(height: 30),
+                          CircleAvatar(
+                            radius: 60,
+                            backgroundColor: Colors.grey.shade200,
+                            backgroundImage: _profileImageUrl != null
+                                ? NetworkImage(_profileImageUrl!)
+                                : null,
+                            child: _profileImageUrl == null
+                                ? Icon(
+                                    Icons.person,
+                                    size: 60,
+                                    color: Colors.grey.shade400,
+                                  )
+                                : null,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            _userName ?? 'ไม่พบชื่อผู้ใช้',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            _userEmail ?? 'ไม่พบอีเมล',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 16,
+                            ),
+                          ),
+                          SizedBox(height: 30),
 
-          // ข้อความสีแดงด้านบน
-          SafeArea(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 70, 0, 0),
-                  child: Text(
-                    "แก้ไขโปรไฟล์",
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      backgroundColor: Color(0xffff3b30),
+                          // --- ส่วนเมนู (ทำงานเหมือนเดิม) ---
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(15.0),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.08),
+                                    spreadRadius: 1,
+                                    blurRadius: 10,
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                children: [
+                                  _buildMenuOption(
+                                    icon: Icons.person_outline,
+                                    title: 'แก้ไขข้อมูลส่วนตัว',
+                                    onTap: () {
+                                      Get.to(Editprofile(uid: widget.uid));
+                                      print('Go to Edit Profile Page');
+                                    },
+                                  ),
+                                  const Divider(
+                                    height: 1,
+                                    indent: 16,
+                                    endIndent: 16,
+                                  ),
+                                  _buildMenuOption(
+                                    icon: Icons.location_on_outlined,
+                                    title: 'เพิ่มที่อยู่',
+                                    onTap: () {
+                                      Get.to(
+                                        AddressesListPage(uid: widget.uid),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(15.0),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.08),
+                                    spreadRadius: 1,
+                                    blurRadius: 10,
+                                  ),
+                                ],
+                              ),
+                              child: _buildMenuOption(
+                                icon: Icons.logout,
+                                title: 'ออกจากระบบ',
+                                textColor: Colors.red,
+                                onTap: () {
+                                  _showLogoutDialog(context);
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  //แจ้งเตือน
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15.0),
+        ),
+        title: const Center(
+          child: Text(
+            'ออกจากระบบ',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        content: const Text('คุณต้องการออกจากระบบใช่หรือไม่?'),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+            onPressed: () => Get.back(),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('ยืนยัน', style: TextStyle(color: Colors.white)),
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              print('Logged out!');
+
+              Get.offAll(LoginPage());
+            },
           ),
         ],
       ),
     );
   }
 
-  // ปุ่มยืนยัน
-  void _showConfirmationDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // User must tap a button to dismiss
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15.0),
-          ),
-          title: const Center(
-            child: Text(
-              'ยืนยันการแก้ไขข้อมูล',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-            ),
-          ),
-          actionsAlignment: MainAxisAlignment.center,
-          actionsPadding: const EdgeInsets.only(
-            bottom: 20.0,
-            left: 20,
-            right: 20,
-          ),
-          actions: <Widget>[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text(
-                      'ยืนยัน',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    onPressed: () {
-                      // Add logic for confirming changes here
-                      Navigator.of(context).pop(); // Close the dialog
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text(
-                      'ยกเลิก',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    onPressed: () {
-                      Navigator.of(context).pop(); // Close the dialog
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
+  //widget
+  Widget _buildMenuOption({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color textColor = Colors.black,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: textColor),
+      title: Text(
+        title,
+        style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+      ),
+      trailing: textColor == Colors.red
+          ? null
+          : const Icon(Icons.arrow_forward_ios, size: 16),
+      onTap: () {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onTap(); // เรียกหลัง frame ปัจจุบัน เพื่อหลีกเลี่ยง context error
+        });
       },
     );
   }
 }
+  
+
+// 

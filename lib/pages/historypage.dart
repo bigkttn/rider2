@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -12,79 +12,293 @@ class Historypage extends StatefulWidget {
 }
 
 class _HistorypageState extends State<Historypage> {
-  File? _imageFile;
-  final ImagePicker _picker = ImagePicker();
-  int _currentIndex = 0;
+  @override
+  void initState() {
+    super.initState();
+    _fetchOrders(); // 🔹 ดึงข้อมูลเมื่อเปิดหน้า
+  }
+
+  List<Map<String, dynamic>> ordersList = [];
+  bool _isLoading = true;
+
+  Future<void> _fetchOrders() async {
+    try {
+      final orderSnapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .get();
+
+      List<Map<String, dynamic>> tempOrder = [];
+
+      for (var itemOne in orderSnapshot.docs) {
+        final orderData = itemOne.data();
+        if (orderData['sender_id'] == widget.uid ||
+            orderData['receiver_id'] == widget.uid) {
+          final senderDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(orderData['sender_id'])
+              .get();
+          final receiverDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(orderData['receiver_id'])
+              .get();
+
+          //   Map<String,dynamic> senderData = {};
+          //   Map<String,dynamic> receiverData = {};
+
+          // if(senderDoc.exists){ senderData = senderDoc.data()!;}
+          // if(receiverDoc.exists){ receiverData = receiverDoc.data()!;}
+
+          tempOrder.add({
+            'order_id': itemOne.id,
+            'item': orderData['items'] ?? [],
+            'sender_name': senderDoc.exists ? senderDoc['fullname'] : null,
+            'sender_phone': senderDoc.exists ? senderDoc['phone'] : null,
+            'sender_address': orderData['sender_address'] ?? '',
+            'receiver_name': receiverDoc.exists
+                ? receiverDoc['fullname']
+                : null,
+            'receiver_phone': receiverDoc.exists ? receiverDoc['phone'] : null,
+            'receiver_address': orderData['receiver_address'] ?? '',
+          });
+
+          print('All orders: $tempOrder');
+        }
+
+        setState(() {
+          ordersList = tempOrder;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error fetching orders: $e');
+
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(color: const Color(0xFFFF3B30)),
-          Positioned(
-            top: 150,
-            left: 0,
-            right: 0,
-            bottom: 0,
+      backgroundColor: const Color(0xffff3b30),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(150.0),
+        child: AppBar(
+          backgroundColor: const Color(0xffff3b30),
+          automaticallyImplyLeading: false,
+          flexibleSpace: Padding(
+            padding: const EdgeInsets.only(top: 120.0),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'ประวัติรายการส่งสินค้า',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
 
-            // พืื้นหลังสีขาว
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(30),
-                  topRight: Radius.circular(30),
+                    // CircleAvatar(
+                    //   radius: 20,
+                    //   backgroundImage: NetworkImage(),
+                    // ),
+                  ],
                 ),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [],
-                ),
-              ),
+                const SizedBox(height: 10),
+              ],
             ),
           ),
+        ),
+      ),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Container(
+            height: MediaQuery.of(context).size.height * 0.725,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Color(0XFFFFFFFF),
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(20),
+                topLeft: Radius.circular(20),
+              ),
+            ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ordersList.isEmpty
+                ? const Center(child: Text('ไม่มีประวัติการส่งของคุณ'))
+                : ListView.builder(
+                    itemCount: ordersList.length,
+                    itemBuilder: (context, index) {
+                      var order = ordersList[index];
+                      final items =
+                          order['item'] as List<dynamic>; // list ของ item
 
-          // ข้อความสีแดงด้านบน
-          SafeArea(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      return Column(
+                        children: items.map((item) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: _buildHistoryItem(
+                              imageUrl: item['imageUrl'] ?? '',
+                              itemDetail:
+                                  item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า',
+                              senderName:
+                                  order['sender_name'] ?? 'ไม่ระบุชื่อผู้ส่ง',
+                              senderAddress:
+                                  order['sender_address'] ??
+                                  'ไม่ระบุที่อยู่ผู้ส่ง',
+                              senderPhone: order['sender_phone'] ?? '-',
+                              receiverName:
+                                  order['receiver_name'] ?? 'ไม่ระบุชื่อผู้รับ',
+                              receiverAddress:
+                                  order['receiver_address'] ??
+                                  'ไม่ระบุที่อยู่ผู้รับ',
+                              receiverPhone: order['receiver_phone'] ?? '-',
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryItem({
+    required String imageUrl,
+    required String itemDetail,
+    required String senderName,
+    required String senderAddress,
+    required String senderPhone,
+    required String receiverName,
+    required String receiverAddress,
+    required String receiverPhone,
+  }) {
+    return Card(
+      elevation: 2,
+      shadowColor: Colors.grey,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 70, 0, 0),
-                  child: Text(
-                    "ประวัติรายการส่งสินค้า",
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10.0),
+                  child: Image.network(
+                    imageUrl.isNotEmpty ? imageUrl : imageUrl,
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: 80,
+                        height: 80,
+                        color: Colors.grey[200],
+                        child: const Icon(
+                          Icons.image_not_supported,
+                          color: Colors.grey,
+                          size: 40,
+                        ),
+                      );
+                    },
                   ),
                 ),
-
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10.0),
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.grey[300],
-                      border: Border.all(color: Colors.white, width: 3),
-                      image: _imageFile != null
-                          ? DecorationImage(
-                              image: FileImage(_imageFile!),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    itemDetail,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12.0),
+              child: Divider(),
+            ),
+            _buildAddressInfo(
+              title: 'ผู้ส่ง:',
+              name: senderName,
+              address: senderAddress,
+              phone: senderPhone,
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12.0),
+              child: Divider(),
+            ),
+
+            const SizedBox(height: 12),
+            _buildAddressInfo(
+              title: 'ผู้รับ:',
+              name: receiverName,
+              address: receiverAddress,
+              phone: receiverPhone,
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildAddressInfo({
+    required String title,
+    required String name,
+    required String address,
+    required String phone,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+              ),
+              Text(
+                address,
+                style: TextStyle(fontSize: 14, color: Colors.grey[800]),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+              ),
+              Text(
+                'เบอร์โทร: $phone',
+                style: TextStyle(fontSize: 14, color: Colors.grey[800]),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

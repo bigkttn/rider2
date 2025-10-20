@@ -28,7 +28,7 @@ class _RidertopageState extends State<Ridertopage> {
   LatLng? pickupPos;
   LatLng? receiverPos;
   Map<String, dynamic>? currentOrder;
-  bool _isFinished = false; // ✅ ป้องกันการอัปเดตหลังส่งสินค้า
+  bool _isFinished = false;
 
   final MapController _mapController = MapController();
 
@@ -44,7 +44,7 @@ class _RidertopageState extends State<Ridertopage> {
     super.dispose();
   }
 
-  /// 🔹 เริ่มอัปเดตตำแหน่งไรเดอร์ทุก 10 วินาที
+  /// 🔹 เริ่มติดตามตำแหน่งไรเดอร์
   void _startLocationTracking() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
@@ -94,7 +94,7 @@ class _RidertopageState extends State<Ridertopage> {
         );
       }
 
-      // ✅ อัปเดตตำแหน่งใน riders
+      // ✅ update ตำแหน่งใน riders
       await FirebaseFirestore.instance
           .collection('riders')
           .doc(widget.uid)
@@ -104,7 +104,7 @@ class _RidertopageState extends State<Ridertopage> {
             'last_update': FieldValue.serverTimestamp(),
           });
 
-      // ✅ ถ้ามีออเดอร์ active → update ตำแหน่งใน orders ด้วย
+      // ✅ update ตำแหน่งใน orders ถ้ามีงาน
       if (currentOrder != null && currentOrder!['order_id'] != null) {
         await FirebaseFirestore.instance
             .collection('orders')
@@ -122,7 +122,7 @@ class _RidertopageState extends State<Ridertopage> {
     }
   }
 
-  /// ✅ อัปโหลดรูปขึ้น Cloudinary
+  /// ✅ อัปโหลดรูปไป Cloudinary
   Future<String?> _uploadToCloudinary(File image) async {
     try {
       const cloudName = "dywfdy174";
@@ -147,7 +147,7 @@ class _RidertopageState extends State<Ridertopage> {
     }
   }
 
-  /// 🔹 ถ่ายรูปและอัปโหลดขึ้น Cloudinary
+  /// 🔹 ถ่ายรูปตอนรับ/ส่งสินค้า
   Future<void> _captureAndUploadImage(bool isPickup) async {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.camera);
@@ -159,12 +159,11 @@ class _RidertopageState extends State<Ridertopage> {
     if (url == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('อัปโหลดรูปไม่สำเร็จ ❌')));
+      ).showSnackBar(const SnackBar(content: Text('❌ อัปโหลดรูปไม่สำเร็จ')));
       return;
     }
 
     if (isPickup) {
-      // ✅ ถ่ายรูปตอนรับสินค้า
       await FirebaseFirestore.instance
           .collection('orders')
           .doc(currentOrder!['order_id'])
@@ -183,7 +182,6 @@ class _RidertopageState extends State<Ridertopage> {
         const SnackBar(content: Text('✅ รับสินค้าเรียบร้อย กำลังเดินทางไปส่ง')),
       );
     } else {
-      // ✅ ถ่ายรูปตอนส่งสินค้า
       await FirebaseFirestore.instance
           .collection('orders')
           .doc(currentOrder!['order_id'])
@@ -193,19 +191,15 @@ class _RidertopageState extends State<Ridertopage> {
             'delivered_at': FieldValue.serverTimestamp(),
           });
 
-      // ✅ ตั้งค่าว่า “งานนี้เสร็จแล้ว”
       _isFinished = true;
-
-      // ✅ หยุดอัปเดตตำแหน่ง
       _timer?.cancel();
 
-      // ✅ ล้างพิกัด Rider ทันที
       await FirebaseFirestore.instance
           .collection('riders')
           .doc(widget.uid)
           .update({
-            'latitude': "",
-            'longitude': "",
+            'latitude': '',
+            'longitude': '',
             'last_update': FieldValue.serverTimestamp(),
           });
 
@@ -224,10 +218,9 @@ class _RidertopageState extends State<Ridertopage> {
     }
   }
 
-  /// 🔹 ดึงพิกัด sender/receiver จาก users/{uid}/addresses
+  /// 🔹 ดึงพิกัดจาก Firestore
   Future<void> _fetchAddresses(Map<String, dynamic> order) async {
     try {
-      // 🟢 sender
       final senderSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .doc(order['sender_id'])
@@ -236,14 +229,13 @@ class _RidertopageState extends State<Ridertopage> {
           .get();
 
       if (senderSnapshot.docs.isNotEmpty) {
-        final senderAddress = senderSnapshot.docs.first.data();
+        final sender = senderSnapshot.docs.first.data();
         pickupPos = LatLng(
-          double.tryParse(senderAddress['latitude'].toString()) ?? 0,
-          double.tryParse(senderAddress['longitude'].toString()) ?? 0,
+          double.tryParse(sender['latitude'].toString()) ?? 0,
+          double.tryParse(sender['longitude'].toString()) ?? 0,
         );
       }
 
-      // 🔵 receiver
       final receiverSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .doc(order['receiver_id'])
@@ -252,14 +244,14 @@ class _RidertopageState extends State<Ridertopage> {
           .get();
 
       if (receiverSnapshot.docs.isNotEmpty) {
-        final receiverAddress = receiverSnapshot.docs.first.data();
+        final receiver = receiverSnapshot.docs.first.data();
         receiverPos = LatLng(
-          double.tryParse(receiverAddress['latitude'].toString()) ?? 0,
-          double.tryParse(receiverAddress['longitude'].toString()) ?? 0,
+          double.tryParse(receiver['latitude'].toString()) ?? 0,
+          double.tryParse(receiver['longitude'].toString()) ?? 0,
         );
       }
 
-      log("📍 senderPos: $pickupPos | receiverPos: $receiverPos");
+      log("📍 sender: $pickupPos | receiver: $receiverPos");
     } catch (e) {
       log('❌ Error fetching addresses: $e');
     }
@@ -308,7 +300,7 @@ class _RidertopageState extends State<Ridertopage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  /// 🌍 แผนที่
+                  /// 🗺️ แผนที่
                   Container(
                     height: 300,
                     decoration: BoxDecoration(
@@ -406,7 +398,92 @@ class _RidertopageState extends State<Ridertopage> {
 
                   const SizedBox(height: 16),
 
-                  /// 🧾 ข้อมูลสถานะ
+                  /// 🚫 ปุ่มยกเลิกการส่ง
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      bool confirmCancel = await showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('ยืนยันการยกเลิกการส่ง'),
+                          content: const Text(
+                            'คุณต้องการยกเลิกการส่งสินค้านี้ใช่หรือไม่?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('ไม่'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('ใช่'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirmCancel == true && currentOrder != null) {
+                        try {
+                          final orderId = currentOrder!['order_id'];
+
+                          await FirebaseFirestore.instance
+                              .collection('orders')
+                              .doc(orderId)
+                              .update({
+                                'status': 'รอไรเดอร์รับสินค้า',
+                                'rider_id': '',
+                                'rider_latitude': '',
+                                'rider_longitude': '',
+                                'rider_last_update':
+                                    FieldValue.serverTimestamp(),
+                                'canceled_at': FieldValue.serverTimestamp(),
+                              });
+
+                          await FirebaseFirestore.instance
+                              .collection('riders')
+                              .doc(widget.uid)
+                              .update({
+                                'latitude': '',
+                                'longitude': '',
+                                'last_update': FieldValue.serverTimestamp(),
+                              });
+
+                          _timer?.cancel();
+
+                          setState(() {
+                            _isFinished = true;
+                            currentOrder = null;
+                            riderPos = null;
+                            pickupPos = null;
+                            receiverPos = null;
+                          });
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                '🚫 ยกเลิกการส่งสำเร็จ — งานกลับไปรอรับใหม่',
+                              ),
+                            ),
+                          );
+                        } catch (e) {
+                          log('❌ Error cancel delivery: $e');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('เกิดข้อผิดพลาดในการยกเลิก'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.cancel),
+                    label: const Text("ยกเลิกการส่งสินค้า"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color.fromARGB(255, 255, 0, 0),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  /// 📄 สถานะและข้อมูลระยะทาง
                   Text(
                     "สถานะ: $status",
                     style: const TextStyle(
