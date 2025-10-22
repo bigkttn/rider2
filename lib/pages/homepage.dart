@@ -35,7 +35,7 @@ class _HomepageState extends State<Homepage> {
     super.initState();
     _pages = [
       HomeContent(uid: widget.uid),
-      Historypage(uid: widget.uid),
+      HistoryPage(uid: widget.uid),
       OrderlistPage(uid: widget.uid, rid: widget.rid),
       SettingPage(uid: widget.uid, aid: widget.aid),
     ];

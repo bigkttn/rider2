@@ -1,6 +1,7 @@
 import 'dart:developer';
 import 'dart:io';
 import 'package:blink_delivery_project/pages/receiving_status.dart';
+import 'package:blink_delivery_project/pages/sending_status.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -233,6 +234,7 @@ class ProductHistoryCard extends StatelessWidget {
                 if (status != 'ไรเดอร์นำส่งสินค้าแล้ว')
                   TextButton(
                     onPressed: () => Get.to(() => const ReceivingStatus()),
+                    // Get.to(() => const SendingStatus()),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.red,
                       side: const BorderSide(

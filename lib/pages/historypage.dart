@@ -1,79 +1,104 @@
-import 'dart:io';
+import 'package:blink_delivery_project/pages/sending_status.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
-class Historypage extends StatefulWidget {
+class HistoryPage extends StatefulWidget {
   final String uid;
-  const Historypage({super.key, required this.uid});
+  const HistoryPage({super.key, required this.uid});
 
   @override
-  State<Historypage> createState() => _HistorypageState();
+  State<HistoryPage> createState() => _HistoryPageState();
 }
 
-class _HistorypageState extends State<Historypage> {
+class _HistoryPageState extends State<HistoryPage> {
+  List<Map<String, dynamic>> ordersList = [];
+  bool isLoading = true; // ✅ แทน _isLoading เพื่อเลี่ยงจอแดง Lookup failed
+
   @override
   void initState() {
     super.initState();
-    _fetchOrders(); // 🔹 ดึงข้อมูลเมื่อเปิดหน้า
+    _fetchOrders();
   }
 
-  List<Map<String, dynamic>> ordersList = [];
-  bool _isLoading = true;
-
+  /// ดึงคำสั่งซื้อที่เกี่ยวกับผู้ใช้ (sender หรือ receiver)
   Future<void> _fetchOrders() async {
     try {
-      final orderSnapshot = await FirebaseFirestore.instance
-          .collection('orders')
-          .get();
+      final snap = await FirebaseFirestore.instance.collection('orders').get();
 
-      List<Map<String, dynamic>> tempOrder = [];
+      final temp = <Map<String, dynamic>>[];
 
-      for (var itemOne in orderSnapshot.docs) {
-        final orderData = itemOne.data();
-        if (orderData['sender_id'] == widget.uid ||
-            orderData['receiver_id'] == widget.uid) {
-          final senderDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(orderData['sender_id'])
-              .get();
-          final receiverDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(orderData['receiver_id'])
-              .get();
+      for (final doc in snap.docs) {
+        final data = doc.data();
 
-          //   Map<String,dynamic> senderData = {};
-          //   Map<String,dynamic> receiverData = {};
+        final isMine =
+            data['sender_id'] == widget.uid ||
+            data['receiver_id'] == widget.uid;
+        if (!isMine) continue;
 
-          // if(senderDoc.exists){ senderData = senderDoc.data()!;}
-          // if(receiverDoc.exists){ receiverData = receiverDoc.data()!;}
+        // ดึงโปรไฟล์ผู้ส่ง/ผู้รับ
+        final senderDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc((data['sender_id'] ?? '').toString())
+            .get();
+        final receiverDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc((data['receiver_id'] ?? '').toString())
+            .get();
 
-          tempOrder.add({
-            'order_id': itemOne.id,
-            'item': orderData['items'] ?? [],
-            'sender_name': senderDoc.exists ? senderDoc['fullname'] : null,
-            'sender_phone': senderDoc.exists ? senderDoc['phone'] : null,
-            'sender_address': orderData['sender_address'] ?? '',
-            'receiver_name': receiverDoc.exists
-                ? receiverDoc['fullname']
-                : null,
-            'receiver_phone': receiverDoc.exists ? receiverDoc['phone'] : null,
-            'receiver_address': orderData['receiver_address'] ?? '',
-          });
+        final sender = senderDoc.data();
+        final receiver = receiverDoc.data();
 
-          print('All orders: $tempOrder');
-        }
-
-        setState(() {
-          ordersList = tempOrder;
-          _isLoading = false;
+        temp.add({
+          'order_id': doc.id,
+          'item': (data['items'] ?? []) as List<dynamic>,
+          'status': (data['status'] ?? '').toString(), // ✅ บังคับเป็น String
+          'image_pickup': (data['image_pickup'] ?? '').toString(),
+          'image_delivered': (data['image_delivered'] ?? '').toString(),
+          'sender_name': senderDoc.exists
+              ? (sender?['fullname'] ?? 'ไม่ระบุชื่อผู้ส่ง').toString()
+              : 'ไม่ระบุชื่อผู้ส่ง',
+          'sender_phone': senderDoc.exists
+              ? (sender?['phone'] ?? '-').toString()
+              : '-',
+          'sender_address': (data['sender_address'] ?? 'ไม่ระบุที่อยู่ผู้ส่ง')
+              .toString(),
+          'receiver_name': receiverDoc.exists
+              ? (receiver?['fullname'] ?? 'ไม่ระบุชื่อผู้รับ').toString()
+              : 'ไม่ระบุชื่อผู้รับ',
+          'receiver_phone': receiverDoc.exists
+              ? (receiver?['phone'] ?? '-').toString()
+              : '-',
+          'receiver_address':
+              (data['receiver_address'] ?? 'ไม่ระบุที่อยู่ผู้รับ').toString(),
+          'createAt': data['createAt'], // ใช้เรียงลำดับถ้ามี
         });
       }
-    } catch (e) {
-      print('Error fetching orders: $e');
 
-      setState(() => _isLoading = false);
+      // เรียงล่าสุดก่อนถ้ามี Timestamp
+      temp.sort((a, b) {
+        final ta = a['createAt'];
+        final tb = b['createAt'];
+        if (ta is Timestamp && tb is Timestamp) {
+          return tb.compareTo(ta);
+        }
+        return 0;
+      });
+
+      if (!mounted) return;
+      setState(() {
+        ordersList = temp;
+        isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error fetching orders: $e');
+      if (!mounted) return;
+      setState(() => isLoading = false);
     }
+  }
+
+  Future<void> _refresh() async {
+    setState(() => isLoading = true);
+    await _fetchOrders();
   }
 
   @override
@@ -81,94 +106,81 @@ class _HistorypageState extends State<Historypage> {
     return Scaffold(
       backgroundColor: const Color(0xffff3b30),
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(150.0),
+        preferredSize: const Size.fromHeight(150),
         child: AppBar(
           backgroundColor: const Color(0xffff3b30),
+          elevation: 0,
           automaticallyImplyLeading: false,
-          flexibleSpace: Padding(
-            padding: const EdgeInsets.only(top: 120.0),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'ประวัติรายการส่งสินค้า',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    // CircleAvatar(
-                    //   radius: 20,
-                    //   backgroundImage: NetworkImage(),
-                    // ),
-                  ],
+          flexibleSpace: const Padding(
+            padding: EdgeInsets.only(top: 100),
+            child: Center(
+              child: Text(
+                'ประวัติรายการส่งสินค้า',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 10),
-              ],
+              ),
             ),
           ),
         ),
       ),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          Container(
-            height: MediaQuery.of(context).size.height * 0.725,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Color(0XFFFFFFFF),
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(20),
-                topLeft: Radius.circular(20),
-              ),
-            ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : ordersList.isEmpty
-                ? const Center(child: Text('ไม่มีประวัติการส่งของคุณ'))
-                : ListView.builder(
-                    itemCount: ordersList.length,
-                    itemBuilder: (context, index) {
-                      var order = ordersList[index];
-                      final items =
-                          order['item'] as List<dynamic>; // list ของ item
-
-                      return Column(
-                        children: items.map((item) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: _buildHistoryItem(
-                              imageUrl: item['imageUrl'] ?? '',
-                              itemDetail:
-                                  item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า',
-                              senderName:
-                                  order['sender_name'] ?? 'ไม่ระบุชื่อผู้ส่ง',
-                              senderAddress:
-                                  order['sender_address'] ??
-                                  'ไม่ระบุที่อยู่ผู้ส่ง',
-                              senderPhone: order['sender_phone'] ?? '-',
-                              receiverName:
-                                  order['receiver_name'] ?? 'ไม่ระบุชื่อผู้รับ',
-                              receiverAddress:
-                                  order['receiver_address'] ??
-                                  'ไม่ระบุที่อยู่ผู้รับ',
-                              receiverPhone: order['receiver_phone'] ?? '-',
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
+      body: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topRight: Radius.circular(20),
+            topLeft: Radius.circular(20),
           ),
-        ],
+        ),
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ordersList.isEmpty
+            ? const Center(child: Text('ไม่มีประวัติการส่งของคุณ'))
+            : RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: ordersList.length,
+                  itemBuilder: (context, index) {
+                    final order = ordersList[index];
+                    final items = order['item'] as List<dynamic>? ?? [];
+
+                    return Column(
+                      children: items.map((item) {
+                        return Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: _buildHistoryItem(
+                            imageUrl: (item['imageUrl'] ?? '').toString(),
+                            itemDetail:
+                                (item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า')
+                                    .toString(),
+                            senderName: (order['sender_name'] ?? '').toString(),
+                            senderAddress: (order['sender_address'] ?? '')
+                                .toString(),
+                            senderPhone: (order['sender_phone'] ?? '-')
+                                .toString(),
+                            receiverName: (order['receiver_name'] ?? '')
+                                .toString(),
+                            receiverAddress: (order['receiver_address'] ?? '')
+                                .toString(),
+                            receiverPhone: (order['receiver_phone'] ?? '-')
+                                .toString(),
+                            status: (order['status'] ?? '').toString(),
+                            orderData: order,
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ),
       ),
     );
   }
 
+  /// หน้าการ์ดแต่ละออเดอร์
   Widget _buildHistoryItem({
     required String imageUrl,
     required String itemDetail,
@@ -178,13 +190,16 @@ class _HistorypageState extends State<Historypage> {
     required String receiverName,
     required String receiverAddress,
     required String receiverPhone,
+    required String status,
+    required Map<String, dynamic> orderData,
   }) {
+    final statusText = status.isNotEmpty ? status : 'กำลังประมวลผล';
+
     return Card(
-      elevation: 2,
-      shadowColor: Colors.grey,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -192,24 +207,14 @@ class _HistorypageState extends State<Historypage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(10.0),
+                  borderRadius: BorderRadius.circular(10),
                   child: Image.network(
-                    imageUrl.isNotEmpty ? imageUrl : imageUrl,
+                    imageUrl.isNotEmpty
+                        ? imageUrl
+                        : 'https://via.placeholder.com/80',
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 80,
-                        height: 80,
-                        color: Colors.grey[200],
-                        child: const Icon(
-                          Icons.image_not_supported,
-                          color: Colors.grey,
-                          size: 40,
-                        ),
-                      );
-                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -224,27 +229,49 @@ class _HistorypageState extends State<Historypage> {
                 ),
               ],
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12.0),
-              child: Divider(),
+            const SizedBox(height: 10),
+            Text(
+              'สถานะ: $statusText',
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
             ),
+            const Divider(height: 20),
             _buildAddressInfo(
-              title: 'ผู้ส่ง:',
-              name: senderName,
-              address: senderAddress,
-              phone: senderPhone,
+              'ผู้ส่ง:',
+              senderName,
+              senderAddress,
+              senderPhone,
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12.0),
-              child: Divider(),
-            ),
-
-            const SizedBox(height: 12),
+            const Divider(height: 20),
             _buildAddressInfo(
-              title: 'ผู้รับ:',
-              name: receiverName,
-              address: receiverAddress,
-              phone: receiverPhone,
+              'ผู้รับ:',
+              receiverName,
+              receiverAddress,
+              receiverPhone,
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SendingStatus(orderData: orderData),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.info_outline),
+                label: const Text('ดูรายละเอียด'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -252,52 +279,21 @@ class _HistorypageState extends State<Historypage> {
     );
   }
 
-  Widget _buildAddressInfo({
-    required String title,
-    required String name,
-    required String address,
-    required String phone,
-  }) {
-    return Row(
+  Widget _buildAddressInfo(
+    String title,
+    String name,
+    String address,
+    String phone,
+  ) {
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          title,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
+          '$title $name',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
-        const SizedBox(height: 4),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 3,
-              ),
-              Text(
-                address,
-                style: TextStyle(fontSize: 14, color: Colors.grey[800]),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 3,
-              ),
-              Text(
-                'เบอร์โทร: $phone',
-                style: TextStyle(fontSize: 14, color: Colors.grey[800]),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 3,
-              ),
-            ],
-          ),
-        ),
+        Text(address, style: const TextStyle(fontSize: 14)),
+        Text('เบอร์โทร: $phone', style: const TextStyle(fontSize: 14)),
       ],
     );
   }
