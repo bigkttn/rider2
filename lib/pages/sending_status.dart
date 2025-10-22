@@ -26,10 +26,10 @@ class SendingStatus extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: const Color(0xffff3b30),
         iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          'สถานะการจัดส่ง',
-          style: TextStyle(color: Colors.white),
-        ),
+        // title: const Text(
+        //   'สถานะการจัดส่ง',
+        //   style: TextStyle(color: Colors.white),
+        // ),
         centerTitle: true,
         elevation: 0,
       ),
