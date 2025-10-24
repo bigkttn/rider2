@@ -26,10 +26,6 @@ class SendingStatus extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: const Color(0xffff3b30),
         iconTheme: const IconThemeData(color: Colors.white),
-        // title: const Text(
-        //   'สถานะการจัดส่ง',
-        //   style: TextStyle(color: Colors.white),
-        // ),
         centerTitle: true,
         elevation: 0,
       ),
@@ -55,7 +51,7 @@ class SendingStatus extends StatelessWidget {
 
           final data = snap.data!.data()!;
 
-          // สถานะ
+          // สถานะ/รูป
           final status = (data['status'] ?? '').toString();
           final imagePickup = (data['image_pickup'] ?? '').toString();
           final imageDelivered = (data['image_delivered'] ?? '').toString();
@@ -64,13 +60,13 @@ class SendingStatus extends StatelessWidget {
           final senderAddress = (data['sender_address'] ?? '').toString();
           final receiverAddress = (data['receiver_address'] ?? '').toString();
 
-          // เวลา (อาจไม่มี)
+          // เวลา
           final createdAt = data['createAt'];
           final riderAccept = data['rider_accept_time'];
           final deliveredAt = data['delivered_at'];
           final canceledAt = data['canceled_at'];
 
-          // พิกัด (รองรับทั้ง number และ string)
+          // พิกัด
           final riderLat = _toDouble(data['rider_latitude']);
           final riderLng = _toDouble(data['rider_longitude']);
           final senderLat = _toDouble(data['sender_latitude']);
@@ -88,6 +84,9 @@ class SendingStatus extends StatelessWidget {
               ? LatLng(recvLat, recvLng)
               : null;
 
+          // ไรเดอร์ไอดี (ใช้ตัดสินใจแสดงบัตรไรเดอร์)
+          final riderId = (data['rider_id'] ?? '').toString().trim();
+
           final step = resolveStepFromStatus(
             status,
             hasPickup: imagePickup.isNotEmpty,
@@ -99,7 +98,6 @@ class SendingStatus extends StatelessWidget {
 
           return Stack(
             children: [
-              // พื้นหลัง/หัวข้อด้านบน (แดง)
               Column(
                 children: [
                   const SizedBox(height: 20),
@@ -114,7 +112,6 @@ class SendingStatus extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // พื้นที่เนื้อหาสีขาวโค้งมนด้านบน
                   Expanded(
                     child: Container(
                       width: double.infinity,
@@ -128,7 +125,7 @@ class SendingStatus extends StatelessWidget {
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
                         children: [
-                          // หัวข้อ "สถานะล่าสุด"
+                          // สถานะล่าสุด
                           Card(
                             elevation: 2,
                             shape: RoundedRectangleBorder(
@@ -170,9 +167,15 @@ class SendingStatus extends StatelessWidget {
                             ),
                           ),
 
+                          const SizedBox(height: 12),
+
+                          // บัตรข้อมูลไรเดอร์ (แสดงเมื่อมี rider_id = รับงานแล้ว)
+                          if (riderId.isNotEmpty)
+                            _RiderInfoCard(riderId: riderId),
+
                           const SizedBox(height: 16),
 
-                          // แผนที่ (สไตล์เดียวกับหน้าเพิ่มที่อยู่) — แสดงตั้งแต่ step 2
+                          // แผนที่ (โชว์ตั้งแต่ step 2 เป็นต้นไป)
                           if (step >= 2)
                             _MapCard(rider: rider, pickup: pickup, recv: recv),
 
@@ -188,7 +191,7 @@ class SendingStatus extends StatelessWidget {
 
                           const SizedBox(height: 16),
 
-                          // รูปภาพหลักฐาน
+                          // รูปหลักฐาน
                           if (imagePickup.isNotEmpty ||
                               imageDelivered.isNotEmpty)
                             Card(
@@ -281,7 +284,136 @@ class SendingStatus extends StatelessWidget {
   }
 }
 
-/// ---------- แผนที่ Thunderforest (สไตล์เหมือนหน้าเพิ่มที่อยู่) ----------
+/// ---------- การ์ดข้อมูลไรเดอร์ ----------
+class _RiderInfoCard extends StatelessWidget {
+  final String riderId;
+  const _RiderInfoCard({required this.riderId});
+
+  String _fmt(dynamic ts) {
+    if (ts is Timestamp) {
+      final dt = ts.toDate();
+      String two(int v) => v.toString().padLeft(2, '0');
+      return '${two(dt.day)}/${two(dt.month)}/${dt.year} ${two(dt.hour)}:${two(dt.minute)}';
+    }
+    return '-';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('riders')
+          .doc(riderId)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || !snap.data!.exists) {
+          return const SizedBox.shrink();
+        }
+        final r = snap.data!.data()!;
+        final photo = (r['profile_photo'] ?? '').toString();
+        final name = (r['fullname'] ?? '').toString();
+        final phone = (r['phone'] ?? '').toString();
+        final vehicleNo = (r['vehicle_number'] ?? '').toString();
+        final createdAt = r['created_at'];
+        final lastUpdate = r['last_update'];
+
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundImage: photo.isNotEmpty
+                      ? NetworkImage(photo)
+                      : null,
+                  child: photo.isEmpty ? const Icon(Icons.person) : null,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.badge,
+                            size: 18,
+                            color: Color(0xffff3b30),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              name.isNotEmpty ? name : 'ไรเดอร์ไม่ระบุชื่อ',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.phone,
+                            size: 18,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(phone.isNotEmpty ? phone : '-'),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.motorcycle,
+                            size: 18,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            vehicleNo.isNotEmpty
+                                ? 'ทะเบียน: $vehicleNo'
+                                : 'ทะเบียน: -',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _chip(
+                            'สร้างบัญชี: ${_fmt(createdAt)}',
+                            const Color(0xff0F9D58),
+                          ),
+                          _chip(
+                            'อัปเดตล่าสุด: ${_fmt(lastUpdate)}',
+                            const Color(0xff4285F4),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// ---------- แผนที่ Thunderforest ----------
 class _MapCard extends StatefulWidget {
   final LatLng? rider;
   final LatLng? pickup;
@@ -299,13 +431,11 @@ class _MapCard extends StatefulWidget {
 class _MapCardState extends State<_MapCard> {
   final MapController mapController = MapController();
 
-  // ปรับซูม/ขอบให้เหมาะ
-  static const double _kMinZoom = 15; // ไม่ให้ไกลเกินนี้
-  static const double _kInitZoom = 16; // มีจุดเดียว → โฟกัสใกล้ ๆ
+  static const double _kMinZoom = 15;
+  static const double _kInitZoom = 16;
   static const double _kMaxZoom = 22;
   static const double _kFitPadding = 20;
 
-  // Thunderforest (เหมือนตัวอย่างคุณ)
   static const String _tfStyle = 'atlas';
   static const String _apiKey = 'd7b6821f750e49e2864ef759ef2223ec';
 
@@ -317,7 +447,6 @@ class _MapCardState extends State<_MapCard> {
         widget.pickup ??
         const LatLng(16.243998, 103.249047);
 
-    // markers
     final markers = <Marker>[
       if (widget.pickup != null)
         Marker(
@@ -342,14 +471,12 @@ class _MapCardState extends State<_MapCard> {
         ),
     ];
 
-    // รวมจุดไว้ fit กล้อง
     final points = <LatLng>[
       if (widget.rider != null) widget.rider!,
       if (widget.pickup != null) widget.pickup!,
       if (widget.recv != null) widget.recv!,
     ];
 
-    // จัดกล้องหลัง build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (points.length >= 2) {
@@ -360,7 +487,6 @@ class _MapCardState extends State<_MapCard> {
             padding: const EdgeInsets.all(_kFitPadding),
           ),
         );
-        // ถ้าซูมยังไกลไป ให้ดันเข้าอย่างน้อย _kMinZoom
         final z = mapController.camera.zoom;
         if (z < _kMinZoom) {
           mapController.move(mapController.camera.center, _kMinZoom);
@@ -370,11 +496,9 @@ class _MapCardState extends State<_MapCard> {
       }
     });
 
-    // UI เหมือนหน้าเพิ่มที่อยู่: กรอบโค้งมน + เส้นขอบแดง
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // หัว "ตำแหน่งบนแผนที่"
         const Padding(
           padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
           child: Text(
@@ -404,16 +528,13 @@ class _MapCardState extends State<_MapCard> {
                 maxZoom: _kMaxZoom,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
-                  // อยากปิดหมุนแผนที่ก็ไม่ใส่ InteractiveFlag.rotate
-                  // ตัวเลือกอื่น ๆ: doubleTapZoom, pinchMove, flingAnimation ฯลฯ
                 ),
               ),
               children: [
                 TileLayer(
                   urlTemplate:
                       'https://tile.thunderforest.com/$_tfStyle/{z}/{x}/{y}.png?apikey=$_apiKey',
-                  userAgentPackageName:
-                      'com.blink.delivery', // เปลี่ยนเป็นแพ็กเกจจริงของคุณ
+                  userAgentPackageName: 'com.blink.delivery',
                   maxNativeZoom: 22,
                   maxZoom: _kMaxZoom,
                 ),
@@ -441,7 +562,6 @@ double? _toDouble(dynamic v) {
   return null;
 }
 
-/// 4 ข้อความสถานะหลัก
 const stepLabels = <int, String>{
   0: 'รอไรเดอร์รับสินค้า',
   1: 'ไรเดอร์รับงานแล้ว (กำลังเดินทางไปรับสินค้า)',

@@ -187,15 +187,12 @@ class _HomeriderPageState extends State<HomeriderPage> {
     );
   }
 
-  // ---------------- คิวรี: ไม่มี where (คัดกรองในแอป) ----------------
+  // ---------------- คิวรี: ไม่มี where (คัดกรองในแอป) + แสดงชื่อผู้ส่ง/ผู้รับ ----------------
   Widget _buildOrderList() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('orders')
-          .orderBy(
-            'createAt',
-            descending: true,
-          ) // ไม่มี where → ไม่ต้องสร้าง composite index
+          .orderBy('createAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -225,48 +222,154 @@ class _HomeriderPageState extends State<HomeriderPage> {
                 ? (data['items'][0]['imageUrl'] ?? '')
                 : '';
 
+            final senderId = (data['sender_id'] ?? '').toString();
+            final receiverId = (data['receiver_id'] ?? '').toString();
+
             return Card(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: ListTile(
-                leading: img.toString().isNotEmpty
-                    ? Image.network(
-                        img,
-                        width: 60,
-                        height: 60,
-                        fit: BoxFit.cover,
-                      )
-                    : const Icon(Icons.inventory),
-                title: FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(data['receiver_id'])
-                      .get(),
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Text("กำลังโหลดชื่อผู้รับ...");
-                    }
-                    if (!snap.hasData || !snap.data!.exists) {
-                      return const Text("ไม่พบชื่อผู้รับ");
-                    }
-                    final u = snap.data!.data() as Map<String, dynamic>?;
-                    final name = (u?['fullname'] ?? 'ไม่พบชื่อผู้รับ')
-                        .toString();
-                    return Text(
-                      name,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    );
-                  },
-                ),
-                subtitle: Text(
-                  (data['receiver_address'] ?? '').toString(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                // กดดูแผนที่ก่อน แล้วค่อยกดยืนยันในหน้าพรีวิว
-                trailing: OutlinedButton.icon(
-                  onPressed: () => _showPreviewMap(context, orderId, data),
-                  icon: const Icon(Icons.map),
-                  label: const Text('ดูแผนที่'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    // รูปสินค้า
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: img.toString().isNotEmpty
+                          ? Image.network(
+                              img,
+                              width: 60,
+                              height: 60,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              width: 60,
+                              height: 60,
+                              color: Colors.grey.shade200,
+                              child: const Icon(
+                                Icons.inventory,
+                                color: Colors.grey,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // ข้อมูลผู้ส่ง/ผู้รับ + ที่อยู่ผู้รับ
+                    Expanded(
+                      child: FutureBuilder<List<DocumentSnapshot>>(
+                        future: Future.wait(
+                          [
+                            if (senderId.isNotEmpty)
+                              FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(senderId)
+                                  .get()
+                            else
+                              Future.value(null),
+                            if (receiverId.isNotEmpty)
+                              FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(receiverId)
+                                  .get()
+                            else
+                              Future.value(null),
+                          ].whereType<Future<DocumentSnapshot>>().toList(),
+                        ),
+                        builder: (context, snap) {
+                          String senderName = 'ไม่ระบุชื่อผู้ส่ง';
+                          String receiverName = 'ไม่ระบุชื่อผู้รับ';
+
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: LinearProgressIndicator(minHeight: 3),
+                            );
+                          }
+
+                          if (snap.hasData && snap.data!.isNotEmpty) {
+                            // ถ้าส่งทั้ง sender & receiver จะมี 2 เอกสาร ตามลำดับที่เรา push
+                            int idx = 0;
+                            if (senderId.isNotEmpty) {
+                              final senderDoc = snap.data![idx++];
+                              if (senderDoc.exists) {
+                                final m =
+                                    senderDoc.data() as Map<String, dynamic>?;
+                                senderName = (m?['fullname'] ?? senderName)
+                                    .toString();
+                              }
+                            }
+                            if (receiverId.isNotEmpty &&
+                                idx < snap.data!.length) {
+                              final receiverDoc = snap.data![idx];
+                              if (receiverDoc.exists) {
+                                final m =
+                                    receiverDoc.data() as Map<String, dynamic>?;
+                                receiverName = (m?['fullname'] ?? receiverName)
+                                    .toString();
+                              }
+                            }
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'ผู้ส่ง: $senderName',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                'ผู้รับ: $receiverName',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                (data['receiver_address'] ?? '').toString(),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // ปุ่มดูแผนที่
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            _showPreviewMap(context, orderId, data),
+                        icon: const Icon(Icons.map, size: 18),
+                        label: const Text(
+                          'ดูแผนที่',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          side: const BorderSide(
+                            color: Color(0xFFFF3B30),
+                            width: 1.5,
+                          ),
+                          foregroundColor: const Color(0xFFFF3B30),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );

@@ -27,13 +27,12 @@ class _ReceivingStatusState extends State<ReceivingStatus> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xffff3b30),
+      backgroundColor: const Color(0xffff3b30),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(150.0),
         child: AppBar(
-          backgroundColor: Color(0xffff3b30),
+          backgroundColor: const Color(0xffff3b30),
           elevation: 0,
-
           flexibleSpace: Padding(
             padding: const EdgeInsets.only(top: 50.0),
             child: Column(
@@ -58,41 +57,53 @@ class _ReceivingStatusState extends State<ReceivingStatus> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        child: Container(
-          height: MediaQuery.of(context).size.height,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 6,
-                offset: Offset(0, 3),
+
+      // ✅ ป้องกัน bottom overflow และทำพื้นหลังสีขาวมุมโค้งบน 20
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: bottomInset + 16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20), // ✅ โค้งมุมบน 20
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    RiderContact(
+                      uid: widget.uid,
+                      rid: widget.rid,
+                      oid: widget.oid,
+                    ),
+                    const SizedBox(height: 16),
+                    // ✅ subscribe เฉพาะออเดอร์นี้ใบเดียว
+                    MapReceive(
+                      uid: widget.uid,
+                      rid: widget.rid,
+                      oid: widget.oid,
+                    ),
+                    const SizedBox(height: 16),
+                    ProductDetail(oid: widget.oid, uid: widget.uid),
+                  ],
+                ),
               ),
-            ],
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              RiderContact(uid: widget.uid, rid: widget.rid, oid: widget.oid),
-              const SizedBox(height: 16),
-              MapReceive(uid: widget.uid, rid: widget.rid),
-              const SizedBox(height: 16),
-              ProductDetail(oid: widget.oid, uid: widget.uid),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
-} //main class
+}
 
-///rider-----------------------------------------------------
+/// ---------------- Rider (ซ่อนไว้ถ้ายังไม่มี rider) ----------------
 class RiderContact extends StatefulWidget {
   final String uid;
   final String rid;
@@ -114,16 +125,25 @@ class _RiderContactState extends State<RiderContact> {
   String? riderPhone;
   String? riderVehicleNumber;
   bool _isLoading = true;
+  bool _hasRider = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchReceiveOrders();
+    _fetchRider();
   }
 
-  Future<void> _fetchReceiveOrders() async {
+  Future<void> _fetchRider() async {
     try {
-      DocumentSnapshot riderDoc = await FirebaseFirestore.instance
+      if (widget.rid.isEmpty) {
+        setState(() {
+          _isLoading = false;
+          _hasRider = false;
+        });
+        return;
+      }
+
+      final riderDoc = await FirebaseFirestore.instance
           .collection('riders')
           .doc(widget.rid)
           .get();
@@ -134,27 +154,28 @@ class _RiderContactState extends State<RiderContact> {
           riderProfile = riderDoc.get('profile_photo');
           riderPhone = riderDoc.get('phone');
           riderVehicleNumber = riderDoc.get('vehicle_number');
-
+          _hasRider = true;
           _isLoading = false;
         });
       } else {
-        print('rider document does not exist');
         setState(() {
+          _hasRider = false;
           _isLoading = false;
         });
       }
     } catch (e) {
-      log('Error fetching orders: $e');
-      setState(() => _isLoading = false);
+      log('Error fetching rider: $e');
+      setState(() {
+        _hasRider = false;
+        _isLoading = false;
+      });
     }
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (!_hasRider) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,7 +187,6 @@ class _RiderContactState extends State<RiderContact> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ),
-
         Card(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
@@ -178,17 +198,14 @@ class _RiderContactState extends State<RiderContact> {
                 Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.red,
-                      width: 2,
-                    ), // กำหนดสีและความหนาของขอบ
+                    border: Border.all(color: Colors.red, width: 2),
                   ),
                   child: CircleAvatar(
                     radius: 28,
-                    backgroundImage: riderProfile != null
+                    backgroundImage: (riderProfile ?? '').isNotEmpty
                         ? NetworkImage(riderProfile!)
                         : null,
-                    child: riderProfile == null
+                    child: (riderProfile ?? '').isEmpty
                         ? Icon(
                             Icons.person,
                             size: 40,
@@ -211,9 +228,12 @@ class _RiderContactState extends State<RiderContact> {
                       ),
                       Row(
                         children: [
-                          Text('ทะเบียนรถ: ', style: TextStyle(fontSize: 12)),
+                          const Text(
+                            'ทะเบียนรถ: ',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           Text(
-                            riderVehicleNumber ?? 'ไม่ระบุเลขทะเบียนรถ',
+                            riderVehicleNumber ?? 'ไม่ระบุ',
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 12,
@@ -223,15 +243,15 @@ class _RiderContactState extends State<RiderContact> {
                       ),
                       Row(
                         children: [
-                          Text(
+                          const Text(
                             'เบอร์โทรศัพท์: ',
                             style: TextStyle(fontSize: 12),
                           ),
                           SizedBox(
-                            width: 50,
+                            width: 100,
                             child: Text(
                               riderPhone ?? 'ไม่ระบุเบอร์โทรศัพท์',
-                              style: TextStyle(fontSize: 12),
+                              style: const TextStyle(fontSize: 12),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
@@ -241,17 +261,18 @@ class _RiderContactState extends State<RiderContact> {
                     ],
                   ),
                 ),
-                Container(
+                SizedBox(
                   width: 80,
                   height: 30,
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
                   child: TextButton(
-                    onPressed: () {
-                      Get.to(() => Riderprofile(rid: widget.rid));
-                    },
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: () =>
+                        Get.to(() => Riderprofile(rid: widget.rid)),
                     child: const Text(
                       'ข้อมูลไรเดอร์',
                       style: TextStyle(
@@ -271,19 +292,21 @@ class _RiderContactState extends State<RiderContact> {
   }
 }
 
-//end rider
-
-//map--------------------------------------------------------------
+/// ---------------- แผนที่ (แสดงเฉพาะออเดอร์เดียวตาม oid) ----------------
 class MapReceive extends StatefulWidget {
-  final String uid, rid;
-  const MapReceive({super.key, required this.uid, required this.rid});
+  final String uid, rid, oid;
+  const MapReceive({
+    super.key,
+    required this.uid,
+    required this.rid,
+    required this.oid,
+  });
 
   @override
   State<MapReceive> createState() => _MapReceiveState();
 }
 
 class _MapReceiveState extends State<MapReceive> {
-  Map<String, dynamic>? currentOrder;
   LatLng? riderPos;
   LatLng? receiverPos;
   double? distanceToRider;
@@ -305,166 +328,123 @@ class _MapReceiveState extends State<MapReceive> {
   void _startDistanceUpdater() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (currentOrder != null) {
-        _updateDistance();
+      if (riderPos != null && receiverPos != null) {
+        setState(() {
+          distanceToRider = Geolocator.distanceBetween(
+            riderPos!.latitude,
+            riderPos!.longitude,
+            receiverPos!.latitude,
+            receiverPos!.longitude,
+          );
+        });
       }
     });
   }
 
-  void _updateDistance() {
-    if (riderPos != null && receiverPos != null) {
-      distanceToRider = Geolocator.distanceBetween(
-        riderPos!.latitude,
-        riderPos!.longitude,
-        receiverPos!.latitude,
-        receiverPos!.longitude,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('orders')
-          .where(
-            'status',
-            whereIn: [
-              'รอไรเดอร์รับสินค้า',
-              'ไรเดอร์รับงานแล้ว (กำลังเดินทางไปรับสินค้า)',
-              'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)',
-            ],
-          )
+          .doc(widget.oid) // ✅ ออเดอร์เดียว
           .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('ไม่มีคำสั่งซื้อที่กำลังจัดส่ง'));
+        if (!snap.hasData || !snap.data!.exists) {
+          return const Center(child: Text('ไม่พบคำสั่งซื้อ'));
         }
 
-        final orders = snapshot.data!.docs;
+        final data = snap.data!.data()!;
+
+        // รีเซ็ตพิกัด
+        riderPos = null;
+        receiverPos = null;
 
         final List<Marker> markers = [];
-        Marker? myRiderMarker;
 
-        for (var doc in orders) {
-          final data = doc.data() as Map<String, dynamic>;
-
-          if (data['rider_latitude'] == null ||
-              data['rider_longitude'] == null) {
-            continue;
-          }
-
-          final LatLng riderPosition = LatLng(
-            double.tryParse(data['rider_latitude'].toString()) ?? 0,
-            double.tryParse(data['rider_longitude'].toString()) ?? 0,
+        // ผู้รับของเรา
+        if (data['receiver_id'] == widget.uid &&
+            data['receiver_latitude'] != null &&
+            data['receiver_longitude'] != null) {
+          receiverPos = LatLng(
+            double.tryParse('${data['receiver_latitude']}') ?? 0,
+            double.tryParse('${data['receiver_longitude']}') ?? 0,
           );
-
-          final bool isMyOrder =
-              data['receiver_id'] == widget.uid &&
-              data['rider_id'] == widget.rid;
-
-          if (isMyOrder &&
-              data['receiver_latitude'] != null &&
-              data['receiver_longitude'] != null) {
-            receiverPos = LatLng(
-              double.tryParse(data['receiver_latitude'].toString()) ?? 0,
-              double.tryParse(data['receiver_longitude'].toString()) ?? 0,
-            );
-            markers.add(
-              Marker(
-                point: receiverPos!,
-                width: 30,
-                height: 30,
-                child: const Icon(
-                  Icons.location_on,
-                  color: Colors.blue,
-                  size: 30,
-                ),
+          markers.add(
+            Marker(
+              point: receiverPos!,
+              width: 30,
+              height: 30,
+              child: const Icon(
+                Icons.location_on,
+                color: Colors.blue,
+                size: 30,
               ),
-            );
-          }
-
-          if (isMyOrder &&
-              data['rider_latitude'] != null &&
-              data['rider_longitude'] != null) {
-            riderPos = LatLng(
-              double.tryParse(data['rider_latitude'].toString()) ?? 0,
-              double.tryParse(data['rider_longitude'].toString()) ?? 0,
-            );
-            markers.add(
-              myRiderMarker = Marker(
-                point: riderPosition,
-                width: 30,
-                height: 30,
-                child: Icon(
-                  Icons.directions_bike_sharp,
-                  color: isMyOrder ? Colors.red : Colors.grey.shade600,
-                  size: 30,
-                ),
-              ),
-            );
-          }
-          // else{
-          //    markers.add(
-          //     Marker(
-          //       point: riderPosition,
-          //       width: 30,
-          //       height: 30,
-          //       child: Icon(
-          //         Icons.directions_bike_sharp,
-          //         color:  Colors.grey.shade600,
-          //         size: 30,
-          //       ),
-          //     ),
-          //   );
-
-          //  }
-        }
-        if (myRiderMarker != null) {
-          markers.add(myRiderMarker);
-        }
-
-        final LatLng initialCenter =
-            receiverPos ?? const LatLng(15.870031, 100.992541);
-
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.blueGrey, width: 2),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
-                  spreadRadius: 3,
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                height: 300,
-                child: FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: initialCenter,
-                    initialZoom: 13,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.rider_app',
-                    ),
-                    MarkerLayer(markers: markers),
-                  ],
+          );
+        }
+
+        // ไรเดอร์ของออเดอร์นี้
+        if ((data['rider_id'] ?? '') == widget.rid &&
+            data['rider_latitude'] != null &&
+            data['rider_longitude'] != null) {
+          riderPos = LatLng(
+            double.tryParse('${data['rider_latitude']}') ?? 0,
+            double.tryParse('${data['rider_longitude']}') ?? 0,
+          );
+          markers.add(
+            Marker(
+              point: riderPos!,
+              width: 30,
+              height: 30,
+              child: const Icon(
+                Icons.directions_bike_sharp,
+                color: Colors.red,
+                size: 30,
+              ),
+            ),
+          );
+        }
+
+        // กล้องเริ่มต้น
+        LatLng initialCenter =
+            receiverPos ?? riderPos ?? const LatLng(15.870031, 100.992541);
+        double initialZoom = (receiverPos != null && riderPos != null)
+            ? 14
+            : 13;
+
+        return Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.blueGrey, width: 2),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 5,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 300,
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: initialCenter,
+                  initialZoom: initialZoom,
                 ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.example.rider_app',
+                  ),
+                  MarkerLayer(markers: markers),
+                ],
               ),
             ),
           ),
@@ -472,9 +452,9 @@ class _MapReceiveState extends State<MapReceive> {
       },
     );
   }
-} //end map
+}
 
-//order product-----------------------------------------------------------------
+/// ---------------- รายละเอียดสินค้า (เพิ่มรูปตามสถานะถ้ามี) ----------------
 class ProductDetail extends StatefulWidget {
   final String oid, uid;
   const ProductDetail({super.key, required this.oid, required this.uid});
@@ -489,6 +469,8 @@ class _ProductDetailState extends State<ProductDetail> {
   String? senderAddress;
   String? senderPhone;
   String? status;
+  String? imagePickupUrl; // ✅ รูปตอนรับของ
+  String? imageDeliveredUrl; // ✅ รูปตอนส่งสำเร็จ
   bool _isLoading = true;
 
   @override
@@ -499,27 +481,25 @@ class _ProductDetailState extends State<ProductDetail> {
 
   Future<void> _fetchDeliveredOrders() async {
     try {
-      DocumentSnapshot orderDoc = await FirebaseFirestore.instance
+      final orderDoc = await FirebaseFirestore.instance
           .collection('orders')
           .doc(widget.oid)
           .get();
 
       if (!orderDoc.exists) {
-        print("ไม่พบข้อมูลคำสั่งซื้อ");
         setState(() => _isLoading = false);
         return;
       }
 
       final orderData = orderDoc.data() as Map<String, dynamic>;
-      String? senderId = orderData['sender_id'];
+      final String? senderId = orderData['sender_id'];
 
       if (senderId == null || senderId.isEmpty) {
-        print("ไม่พบ sender_id ใน order");
         setState(() => _isLoading = false);
         return;
       }
 
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+      final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(senderId)
           .get();
@@ -527,119 +507,173 @@ class _ProductDetailState extends State<ProductDetail> {
       setState(() {
         orderDetail = List<Map<String, dynamic>>.from(orderData['items'] ?? []);
         senderAddress = orderData['sender_address'] ?? 'ไม่ระบุที่อยู่';
-        senderName = userDoc.get('fullname') ?? 'ไม่ระบุชื่อผู้ส่ง';
-        senderPhone = userDoc.get('phone') ?? 'ไม่ระบุเบอร์โทร';
-        status = orderData['status'] ?? 'ว่าง';
+        senderName = userDoc.data()?['fullname'] ?? 'ไม่ระบุชื่อผู้ส่ง';
+        senderPhone = userDoc.data()?['phone'] ?? 'ไม่ระบุเบอร์โทร';
+        status = (orderData['status'] ?? 'ว่าง').toString();
+
+        // ✅ ดึง URL รูปจากออเดอร์
+        imagePickupUrl = (orderData['image_pickup'] ?? '').toString();
+        imageDeliveredUrl = (orderData['image_delivered'] ?? '').toString();
+
         _isLoading = false;
       });
-      print('สถานะตอนนี้: "$status"');
     } catch (e) {
-      print("fetch error: $e");
+      log("fetch error: $e");
       setState(() => _isLoading = false);
     }
   }
 
+  bool get _shouldShowPickup {
+    // แสดงรูปตอนรับของเมื่อสถานะถึงขั้นรับของแล้วขึ้นไป
+    return (imagePickupUrl ?? '').isNotEmpty &&
+        (status == 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)' ||
+            status == 'ไรเดอร์นำส่งสินค้าแล้ว');
+  }
+
+  bool get _shouldShowDelivered {
+    // แสดงรูปส่งสำเร็จเฉพาะตอน "นำส่งแล้ว"
+    return (imageDeliveredUrl ?? '').isNotEmpty &&
+        status == 'ไรเดอร์นำส่งสินค้าแล้ว';
+  }
+
+  Widget _proofTile(String title, String url) {
+    return Card(
+      margin: const EdgeInsets.only(top: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(
+            url,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              width: 56,
+              height: 56,
+              color: Colors.grey[200],
+              child: const Icon(Icons.image_not_supported),
+            ),
+          ),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text('สถานะปัจจุบัน: ${status ?? '-'}'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (orderDetail.isEmpty) {
       return const Center(child: Text('ไม่พบข้อมูลสินค้า'));
     }
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-
-      itemCount: orderDetail.length,
-      itemBuilder: (context, index) {
-        var item = orderDetail[index];
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 0),
-          child: Row(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(5),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    item['imageUrl'] ?? '',
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 80,
-                        height: 80,
-                        color: Colors.grey[300],
-                        child: const Icon(
-                          Icons.image_not_supported,
-                          color: Colors.grey,
-                        ),
-                      );
-                    },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // รายการสินค้า
+        ...orderDetail.map((item) {
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 0),
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(5),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      item['imageUrl'] ?? '',
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: 80,
+                          height: 80,
+                          color: Colors.grey[300],
+                          child: const Icon(
+                            Icons.image_not_supported,
+                            color: Colors.grey,
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-
-              Padding(
-                padding: const EdgeInsets.all(3),
-                child: Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item['detail'] ?? 'ไม่ระบุรายละเอียด',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        senderName!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (item['detail'] ?? 'ไม่ระบุรายละเอียด').toString(),
+                          style: const TextStyle(fontSize: 14),
                         ),
-                      ),
-                      SizedBox(
-                        width: 200,
-                        child: Text(
-                          senderAddress!,
-                          style: TextStyle(
+                        const SizedBox(height: 4),
+                        Text(
+                          senderName ?? '-',
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: Colors.blueGrey,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
                         ),
-                      ),
-                      Text(
-                        senderPhone!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
+                        SizedBox(
+                          width: 200,
+                          child: Text(
+                            senderAddress ?? '-',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueGrey,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
                         ),
-                      ),
-                    ],
+                        Text(
+                          senderPhone ?? '-',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          );
+        }),
+
+        const SizedBox(height: 12),
+        const Divider(),
+        const SizedBox(height: 8),
+
+        // ✅ หลักฐานจากไรเดอร์ (แสดงตามสถานะ)
+        if (_shouldShowPickup || _shouldShowDelivered)
+          const Padding(
+            padding: EdgeInsets.only(left: 4.0, bottom: 6),
+            child: Text(
+              'หลักฐานจากไรเดอร์',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ),
-        );
-      },
+        if (_shouldShowPickup)
+          _proofTile('รูปตอนรับสินค้า (Pickup)', imagePickupUrl!),
+        if (_shouldShowDelivered)
+          _proofTile('รูปตอนส่งสำเร็จ (Delivered)', imageDeliveredUrl!),
+      ],
     );
   }
 }
-//end product
-//-------------------------------------------------------------------------
 
+/// ---------------- ตัวติดตามสถานะ ----------------
 class StatusTracker extends StatefulWidget {
   final String oid, uid, rid;
   const StatusTracker({
@@ -654,7 +688,6 @@ class StatusTracker extends StatefulWidget {
 }
 
 class _StatusTrackerState extends State<StatusTracker> {
-  List<Map<String, dynamic>> statusList = [];
   bool _isLoading = true;
   String? status;
 
@@ -666,18 +699,17 @@ class _StatusTrackerState extends State<StatusTracker> {
 
   Future<void> _fetchStatus() async {
     try {
-      DocumentSnapshot statueDoc = await FirebaseFirestore.instance
+      final statueDoc = await FirebaseFirestore.instance
           .collection('orders')
           .doc(widget.oid)
           .get();
       final data = statueDoc.data() as Map<String, dynamic>;
-
       setState(() {
         status = data['status'] ?? '';
         _isLoading = false;
       });
     } catch (e) {
-      print('fetch error:$e');
+      log('fetch error:$e');
       setState(() => _isLoading = false);
     }
   }

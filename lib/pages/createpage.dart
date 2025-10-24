@@ -231,96 +231,105 @@ class _CreatepageState extends State<Createpage> {
       ),
       builder: (ctx) {
         final qCtl = TextEditingController();
-        List<UserModel> list = List.of(allUsers);
+        // ← ใช้ StatefulBuilder เก็บลิสต์ที่กรองแล้ว
+        List<UserModel> filtered = List.of(allUsers);
 
-        void filter(String q) {
-          final lower = q.toLowerCase();
-          list = allUsers.where((u) {
-            return u.fullname.toLowerCase().contains(lower) ||
-                u.phone.toLowerCase().contains(lower) ||
-                u.email.toLowerCase().contains(lower);
-          }).toList();
-          // refresh bottom sheet
-          (ctx as Element).markNeedsBuild();
+        void doFilter(String q, void Function(void Function()) setModalState) {
+          final lower = q.trim().toLowerCase();
+          setModalState(() {
+            filtered = allUsers.where((u) {
+              return u.fullname.toLowerCase().contains(lower) ||
+                  u.phone.toLowerCase().contains(lower) ||
+                  u.email.toLowerCase().contains(lower);
+            }).toList();
+          });
         }
 
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            ),
-            child: SizedBox(
-              height: MediaQuery.of(ctx).size.height * 0.7,
-              child: Column(
-                children: [
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'เลือกรายชื่อผู้รับ',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: TextField(
-                      controller: qCtl,
-                      onChanged: filter,
-                      decoration: InputDecoration(
-                        hintText: 'ค้นหาชื่อ/อีเมล/เบอร์',
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: Color(0xffff3b30),
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                ),
+                child: SizedBox(
+                  height: MediaQuery.of(ctx).size.height * 0.7,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[100],
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: list.length,
-                      itemBuilder: (_, i) {
-                        final u = list[i];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage: u.imageUrl.isNotEmpty
-                                ? NetworkImage(u.imageUrl)
-                                : const AssetImage('assets/avatar.png')
-                                      as ImageProvider,
+                      const SizedBox(height: 12),
+                      const Text(
+                        'เลือกรายชื่อผู้รับ',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: TextField(
+                          controller: qCtl,
+                          onChanged: (q) => doFilter(q, setModalState),
+                          decoration: InputDecoration(
+                            hintText: 'ค้นหาชื่อ/อีเมล/เบอร์',
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Color(0xffff3b30),
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[100],
                           ),
-                          title: Text(u.fullname),
-                          subtitle: Text('${u.phone}  |  ${u.email}'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.pop(ctx, u),
-                        );
-                      },
-                    ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, i) {
+                            final u = filtered[i];
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundImage: u.imageUrl.isNotEmpty
+                                    ? NetworkImage(u.imageUrl)
+                                    : const AssetImage('assets/avatar.png')
+                                          as ImageProvider,
+                              ),
+                              title: Text(u.fullname),
+                              subtitle: Text('${u.phone}  |  ${u.email}'),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () => Navigator.pop(ctx, u),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
 
     if (chosen == null) return;
 
-    // โหลดที่อยู่ของผู้รับที่เลือก (ถ้ามีหลายที่ให้เลือก)
+    // โหลดที่อยู่ของผู้รับที่เลือกเหมือนเดิม...
     final addrSnap = await FirebaseFirestore.instance
         .collection('users')
         .doc(chosen.uid)

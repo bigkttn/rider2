@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,9 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_navigation/get_navigation.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
+
 import 'Homerider.dart';
 
 class EditriderpagState extends StatefulWidget {
@@ -32,6 +32,8 @@ class EditriderpagStateState extends State<EditriderpagState> {
 
   bool _loading = false;
 
+  final ImagePicker _picker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
@@ -47,33 +49,71 @@ class EditriderpagStateState extends State<EditriderpagState> {
     if (doc.exists) {
       final data = doc.data()!;
       setState(() {
-        _fullnameCtl.text = data['fullname'] ?? '';
-        _phoneCtl.text = data['phone'] ?? '';
-        _vehicleNumberCtl.text = data['vehicle_number'] ?? '';
-        profilePhotoUrl = data['profile_photo'];
-        vehiclePhotoUrl = data['vehicle_photo'];
+        _fullnameCtl.text = (data['fullname'] ?? '').toString();
+        _phoneCtl.text = (data['phone'] ?? '').toString();
+        _vehicleNumberCtl.text = (data['vehicle_number'] ?? '').toString();
+        profilePhotoUrl = (data['profile_photo'] ?? '').toString();
+        vehiclePhotoUrl = (data['vehicle_photo'] ?? '').toString();
       });
     }
   }
 
+  // ---------- เลือกแหล่งรูป (กล้อง/แกลเลอรี) ----------
+  Future<ImageSource?> _chooseImageSource() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('ถ่ายจากกล้อง'),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('เลือกจากแกลเลอรี'),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------- เลือกรูป (รองรับทั้งโปรไฟล์/พาหนะ + กล้อง/แกลเลอรี) ----------
   Future<void> _pickImage(bool isProfile) async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        if (isProfile) {
-          _profileImage = File(pickedFile.path);
-        } else {
-          _vehicleImage = File(pickedFile.path);
-        }
-      });
-    }
+    final source = await _chooseImageSource();
+    if (source == null) return;
+
+    final XFile? picked = await _picker.pickImage(
+      source: source,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    setState(() {
+      if (isProfile) {
+        _profileImage = File(picked.path);
+      } else {
+        _vehicleImage = File(picked.path);
+      }
+    });
   }
 
   Future<void> _saveChanges() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // แสดง AlertDialog ยืนยันก่อนบันทึก
+    // ยืนยันก่อนบันทึก
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -81,35 +121,30 @@ class EditriderpagStateState extends State<EditriderpagState> {
         content: const Text('คุณต้องการบันทึกการเปลี่ยนแปลงหรือไม่?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false), // ยกเลิก
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('ยกเลิก'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true), // ตกลง
+            onPressed: () => Navigator.pop(context, true),
             child: const Text('ตกลง'),
           ),
         ],
       ),
     );
-
-    if (confirm != true) return; // ถ้าไม่ตกลงก็ไม่ทำอะไร
+    if (confirm != true) return;
 
     setState(() => _loading = true);
 
-    // อัปโหลดรูปโปรไฟล์ถ้าเลือกใหม่
+    // อัปโหลดรูปโปรไฟล์ถ้าเลือกรูปใหม่
     if (_profileImage != null) {
-      final uploadedProfileUrl = await uploadToCloudinary(_profileImage!);
-      if (uploadedProfileUrl != null) {
-        profilePhotoUrl = uploadedProfileUrl;
-      }
+      final uploaded = await uploadToCloudinary(_profileImage!);
+      if (uploaded != null) profilePhotoUrl = uploaded;
     }
 
-    // อัปโหลดรูปรถถ้าเลือกใหม่
+    // อัปโหลดรูปรถถ้าเลือกรูปใหม่
     if (_vehicleImage != null) {
-      final uploadedVehicleUrl = await uploadToCloudinary(_vehicleImage!);
-      if (uploadedVehicleUrl != null) {
-        vehiclePhotoUrl = uploadedVehicleUrl;
-      }
+      final uploaded = await uploadToCloudinary(_vehicleImage!);
+      if (uploaded != null) vehiclePhotoUrl = uploaded;
     }
 
     final dataToUpdate = {
@@ -127,7 +162,7 @@ class EditriderpagStateState extends State<EditriderpagState> {
 
     setState(() => _loading = false);
 
-    // แสดง Alert ยืนยันเสร็จแล้ว
+    // แจ้งผลและกลับหน้า Homerider
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -136,16 +171,21 @@ class EditriderpagStateState extends State<EditriderpagState> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // ปิด dialog
-              Get.to(
-                () => HomeriderPage(uid: widget.uid),
-              ); // กลับหน้า Homerider
+              Navigator.pop(context); // close dialog
+              Get.to(() => HomeriderPage(uid: widget.uid));
             },
             child: const Text('ตกลง'),
           ),
         ],
       ),
     );
+  }
+
+  ImageProvider? _profileProvider() {
+    if (_profileImage != null) return FileImage(_profileImage!);
+    if ((profilePhotoUrl ?? '').isNotEmpty)
+      return NetworkImage(profilePhotoUrl!);
+    return null;
   }
 
   @override
@@ -155,9 +195,7 @@ class EditriderpagStateState extends State<EditriderpagState> {
         title: const Text('แก้ไขข้อมูล Rider'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context, true); // ส่ง true กลับ
-          },
+          onPressed: () => Navigator.pop(context, true),
         ),
       ),
       body: _loading
@@ -173,28 +211,28 @@ class EditriderpagStateState extends State<EditriderpagState> {
                       onTap: () => _pickImage(true),
                       child: CircleAvatar(
                         radius: 50,
-                        backgroundImage: _profileImage != null
-                            ? FileImage(_profileImage!)
-                            : (profilePhotoUrl != null
-                                      ? NetworkImage(profilePhotoUrl!)
-                                      : null)
-                                  as ImageProvider<Object>?,
-                        child: _profileImage == null && profilePhotoUrl == null
+                        backgroundImage: _profileProvider(),
+                        child: _profileProvider() == null
                             ? const Icon(Icons.person, size: 50)
                             : null,
                       ),
                     ),
                     const SizedBox(height: 16),
+
+                    // ชื่อ-นามสกุล
                     TextFormField(
                       controller: _fullnameCtl,
                       decoration: const InputDecoration(
                         labelText: 'ชื่อ-นามสกุล',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) =>
-                          v!.isEmpty ? 'กรุณากรอกชื่อ-นามสกุล' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'กรุณากรอกชื่อ-นามสกุล'
+                          : null,
                     ),
                     const SizedBox(height: 16),
+
+                    // เบอร์โทร
                     TextFormField(
                       controller: _phoneCtl,
                       decoration: const InputDecoration(
@@ -202,9 +240,13 @@ class EditriderpagStateState extends State<EditriderpagState> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.phone,
-                      validator: (v) => v!.isEmpty ? 'กรุณากรอกเบอร์โทร' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'กรุณากรอกเบอร์โทร'
+                          : null,
                     ),
                     const SizedBox(height: 16),
+
+                    // เลขทะเบียน
                     TextFormField(
                       controller: _vehicleNumberCtl,
                       decoration: const InputDecoration(
@@ -213,9 +255,10 @@ class EditriderpagStateState extends State<EditriderpagState> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // รูปรถ
+
                     // รูปรถ
                     Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'เพิ่มรูปรถของคุณ',
@@ -228,34 +271,43 @@ class EditriderpagStateState extends State<EditriderpagState> {
                         GestureDetector(
                           onTap: () => _pickImage(false),
                           child: Container(
-                            height: 120,
+                            height: 140,
                             width: double.infinity,
-                            color: Colors.grey[300],
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            clipBehavior: Clip.antiAlias,
                             child: _vehicleImage != null
                                 ? Image.file(_vehicleImage!, fit: BoxFit.cover)
-                                : (vehiclePhotoUrl != null
-                                      ? Image.network(
-                                          vehiclePhotoUrl!,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : const Center(
-                                          child: Text(
-                                            'แตะเพื่อเพิ่มรูปรถ',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Colors.black54,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        )),
+                                : (vehiclePhotoUrl != null &&
+                                      vehiclePhotoUrl!.isNotEmpty)
+                                ? Image.network(
+                                    vehiclePhotoUrl!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : const Center(
+                                    child: Text(
+                                      'แตะเพื่อเพิ่มรูปรถ',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.black54,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _saveChanges,
-                      child: const Text('บันทึกการเปลี่ยนแปลง'),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _saveChanges,
+                        child: const Text('บันทึกการเปลี่ยนแปลง'),
+                      ),
                     ),
                   ],
                 ),
@@ -274,21 +326,21 @@ class EditriderpagStateState extends State<EditriderpagState> {
         "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
       );
 
-      var request = http.MultipartRequest("POST", url)
+      final request = http.MultipartRequest("POST", url)
         ..fields['upload_preset'] = uploadPreset
         ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
 
-      var response = await request.send();
+      final response = await request.send();
       if (response.statusCode == 200) {
-        var responseData = await response.stream.bytesToString();
-        var jsonData = jsonDecode(responseData);
-        return jsonData['secure_url']; // ✅ URL ของรูป
+        final responseData = await response.stream.bytesToString();
+        final jsonData = jsonDecode(responseData);
+        return jsonData['secure_url']; // URL ของรูป
       } else {
-        print("Upload failed: ${response.statusCode}");
+        debugPrint("Upload failed: ${response.statusCode}");
         return null;
       }
     } catch (e) {
-      print("Upload error: $e");
+      debugPrint("Upload error: $e");
       return null;
     }
   }

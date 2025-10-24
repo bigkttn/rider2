@@ -2,13 +2,9 @@ import 'dart:developer';
 import 'package:blink_delivery_project/model/get_user_re.dart';
 import 'package:blink_delivery_project/pages/createpage.dart';
 import 'package:blink_delivery_project/pages/historypage.dart';
-import 'package:blink_delivery_project/pages/login.dart';
 import 'package:blink_delivery_project/pages/orderlist.dart';
-import 'package:blink_delivery_project/pages/receiving_status.dart';
-import 'package:blink_delivery_project/pages/sending_status.dart';
 import 'package:blink_delivery_project/pages/setting.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 // =======================================================================
@@ -56,25 +52,9 @@ class _HomepageState extends State<Homepage> {
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'ประวัติ'),
           BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'รายการ'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'ตั้งค่า'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.logout),
-            label: 'ออกจากระบบ',
-          ),
         ],
         currentIndex: _currentIndex,
-        onTap: (int index) {
-          if (index == 4) {
-            FirebaseAuth.instance.signOut();
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (context) => const LoginPage()),
-              (route) => false,
-            );
-          } else {
-            setState(() {
-              _currentIndex = index;
-            });
-          }
-        },
+        onTap: (int index) => setState(() => _currentIndex = index),
       ),
     );
   }
@@ -124,69 +104,47 @@ class _HomeContentState extends State<HomeContent> {
 
   @override
   Widget build(BuildContext context) {
+    const double kWhiteTop = 180; // จุดเริ่มพื้นที่สีขาว (เดิม)
+    const double kPushIntoWhite = 80; // ระยะดันปุ่มให้ลงไปในโซนสีขาว
+
     return Scaffold(
       body: Stack(
         children: [
+          // พื้นหลังแดง
           Container(color: const Color(0xFFFF3B30)),
-          Positioned(
-            top: 180,
+          // แผ่นสีขาวโค้งมนด้านบน — กลับไปตำแหน่งเดิม
+          const Positioned(
+            top: kWhiteTop,
             left: 0,
             right: 0,
             bottom: 0,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-              ),
-            ),
+            child: _WhiteSheet(),
           ),
           SafeArea(
             child: Column(
               children: [
                 _buildHeader(),
+                // เนื้อหา
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
                     child: Column(
                       children: [
+                        // ดันเนื้อหา (โดยเฉพาะปุ่ม) ลงไปอยู่ในแผ่นสีขาว
+                        const SizedBox(height: kPushIntoWhite),
                         _buildMainButton(
                           "ส่งสินค้า",
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => Createpage(uid: widget.uid),
-                            ),
-                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    Createpage(uid: widget.uid),
+                              ),
+                            );
+                          },
                         ),
-                        const SizedBox(height: 16),
-                        // Row(
-                        //   children: [
-                        //     Expanded(
-                        //       child: _buildSubButton(
-                        //         "กำลังจัดส่ง",
-                        //         onPressed: () => Navigator.push(
-                        //           context,
-                        //           MaterialPageRoute(
-                        //             builder: (context) => const SendingStatus(),
-                        //           ),
-                        //         ),
-                        //       ),
-                        //     ),
-                        //     const SizedBox(width: 16),
-                        //     Expanded(
-                        //       child: _buildSubButton(
-                        //         "รอการตอบรับ",
-                        //         onPressed: () => Navigator.push(
-                        //           context,
-                        //           MaterialPageRoute(
-                        //             builder: (context) =>
-                        //                 const ReceivingStatus(),
-                        //           ),
-                        //         ),
-                        //       ),
-                        //     ),
-                        //   ],
-                        // ),
+                        const SizedBox(height: 24),
                       ],
                     ),
                   ),
@@ -201,7 +159,7 @@ class _HomeContentState extends State<HomeContent> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 30),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
       child: Row(
         children: [
           Expanded(
@@ -262,6 +220,7 @@ class _HomeContentState extends State<HomeContent> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+          elevation: 2,
         ),
         child: Text(
           text,
@@ -274,28 +233,18 @@ class _HomeContentState extends State<HomeContent> {
       ),
     );
   }
+}
 
-  Widget _buildSubButton(String text, {required VoidCallback onPressed}) {
-    return SizedBox(
-      height: 100,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xffff3b30),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.all(12),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+// แผ่นสีขาวโค้งมน (แยกเป็น Stateless ให้โค้ดสะอาด)
+class _WhiteSheet extends StatelessWidget {
+  const _WhiteSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
     );
   }
