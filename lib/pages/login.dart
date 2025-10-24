@@ -308,7 +308,8 @@ class _LoginPageState extends State<LoginPage> {
         if (isUser) {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (context) => Homepage(uid: uid, aid: '', rid: ''),
+              builder: (context) =>
+                  Homepage(uid: uid, aid: '', rid: '', oid: ''),
             ),
           );
           log('➡️ Login as USER');

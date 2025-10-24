@@ -14,12 +14,13 @@ import 'package:flutter/material.dart';
 // =======================================================================
 
 class Homepage extends StatefulWidget {
-  final String uid, aid, rid;
+  final String uid, aid, rid, oid;
   const Homepage({
     super.key,
     required this.uid,
     required this.aid,
     required this.rid,
+    required this.oid,
   });
 
   @override
@@ -36,7 +37,7 @@ class _HomepageState extends State<Homepage> {
     _pages = [
       HomeContent(uid: widget.uid),
       HistoryPage(uid: widget.uid),
-      OrderlistPage(uid: widget.uid, rid: widget.rid),
+      OrderlistPage(uid: widget.uid, rid: widget.rid, oid: widget.oid),
       SettingPage(uid: widget.uid, aid: widget.aid),
     ];
   }

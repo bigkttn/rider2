@@ -295,7 +295,7 @@ class ProductHistoryCard extends StatelessWidget {
                 if (status != 'ไรเดอร์นำส่งสินค้าแล้ว') ...[
                   TextButton(
                     onPressed: () {
-                      Get.to(() => ReceivingStatus());
+                      // Get.to(() => ReceivingStatus(uid: uid, rid: rid, oid: oid));
                     },
                     child: Text('รายละเอียด'),
                     style: ButtonStyle(

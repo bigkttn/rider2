@@ -1,7 +1,7 @@
 import 'dart:developer';
 import 'dart:io';
+
 import 'package:blink_delivery_project/pages/receiving_status.dart';
-import 'package:blink_delivery_project/pages/sending_status.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -10,7 +10,13 @@ import 'package:image_picker/image_picker.dart';
 class OrderlistPage extends StatefulWidget {
   final String uid;
   final String rid;
-  const OrderlistPage({super.key, required this.uid, required this.rid});
+  final String oid;
+  const OrderlistPage({
+    super.key,
+    required this.uid,
+    required this.rid,
+    required this.oid,
+  });
 
   @override
   State<OrderlistPage> createState() => _OrderlistPageState();
@@ -27,7 +33,7 @@ class _OrderlistPageState extends State<OrderlistPage> {
   void initState() {
     super.initState();
     _pages = <Widget>[
-      InTransitTab(uid: widget.uid, rid: widget.rid),
+      InTransitTab(uid: widget.uid, rid: widget.rid, oid: widget.oid),
       ReceivedTab(uid: widget.uid, rid: widget.rid),
     ];
   }
@@ -38,6 +44,8 @@ class _OrderlistPageState extends State<OrderlistPage> {
       body: Stack(
         children: [
           Container(color: const Color(0xFFFF3B30)),
+
+          // พื้นหลังขาวส่วนล่าง
           Positioned(
             top: 150,
             left: 0,
@@ -66,37 +74,90 @@ class _OrderlistPageState extends State<OrderlistPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         TextButton(
-                          onPressed: () => setState(() => _selectedIndex = 0),
+                          onPressed: () {
+                            setState(() {
+                              _selectedIndex = 0;
+                            });
+                          },
                           child: Text(
-                            'สินค้าที่กำลังจัดส่ง',
+                            'สินค้ากำลังมาส่ง',
                             style: TextStyle(
                               color: _selectedIndex == 0
-                                  ? const Color(0xffff3b30)
+                                  ? Color(0xffff3b30)
                                   : Colors.grey,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          style: ButtonStyle(
+                            side: WidgetStatePropertyAll(
+                              BorderSide(color: Color(0xffff3b30), width: 2),
+                            ),
+                            foregroundColor:
+                                MaterialStateProperty.resolveWith<Color?>(
+                                  (states) =>
+                                      states.contains(MaterialState.pressed)
+                                      ? Colors.white
+                                      : Color(0xffff3b30),
+                                ),
+                            backgroundColor:
+                                MaterialStateProperty.resolveWith<Color?>(
+                                  (states) =>
+                                      states.contains(MaterialState.pressed)
+                                      ? Color(0xffff3b30)
+                                      : Colors.white,
+                                ),
+                          ),
                         ),
                         TextButton(
-                          onPressed: () => setState(() => _selectedIndex = 1),
+                          onPressed: () {
+                            setState(() {
+                              _selectedIndex = 1;
+                            });
+                          },
                           child: Text(
                             'สินค้าที่เคยได้รับ',
                             style: TextStyle(
                               color: _selectedIndex == 1
-                                  ? const Color(0xffff3b30)
+                                  ? Color(0xffff3b30)
                                   : Colors.grey,
                               fontWeight: FontWeight.bold,
                             ),
+                          ),
+                          style: ButtonStyle(
+                            side: WidgetStatePropertyAll(
+                              BorderSide(color: Color(0xffff3b30), width: 2),
+                            ),
+                            foregroundColor:
+                                MaterialStateProperty.resolveWith<Color?>(
+                                  (states) =>
+                                      states.contains(MaterialState.pressed)
+                                      ? Colors.white
+                                      : Color(0xffff3b30),
+                                ),
+                            backgroundColor:
+                                MaterialStateProperty.resolveWith<Color?>(
+                                  (states) =>
+                                      states.contains(MaterialState.pressed)
+                                      ? Color(0xffff3b30)
+                                      : Colors.white,
+                                ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  Expanded(child: _pages[_selectedIndex]),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 0), // ขยับขึ้น
+                      child: _pages[_selectedIndex],
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
+
+          // 🔹 Header สีแดงด้านบน
           SafeArea(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -139,7 +200,6 @@ class _OrderlistPageState extends State<OrderlistPage> {
   }
 }
 
-// 🔹 Card แสดงข้อมูลสินค้า
 class ProductHistoryCard extends StatelessWidget {
   final String imageUrl;
   final String productDetial;
@@ -150,6 +210,9 @@ class ProductHistoryCard extends StatelessWidget {
   final String riderPhone;
   final String status;
   final dynamic createAt;
+  final String uid;
+  final String rid;
+  final String oid;
 
   const ProductHistoryCard({
     super.key,
@@ -162,6 +225,9 @@ class ProductHistoryCard extends StatelessWidget {
     required this.riderPhone,
     required this.status,
     required this.createAt,
+    required this.uid,
+    required this.rid,
+    required this.oid,
   });
 
   @override
@@ -216,25 +282,42 @@ class ProductHistoryCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             Text(senderAddress),
-            Text("โทร: $senderPhone"),
+            Text("เบอร์โทร: $senderPhone"),
             const Divider(),
+
             Text(
               "ไรเดอร์: $riderName",
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             Text("เบอร์โทร: $riderPhone"),
             const Divider(),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  "สถานะ: $status",
-                  style: const TextStyle(color: Colors.green),
+                Container(
+                  width: 200,
+                  child: Text(
+                    "สถานะ: $status",
+                    style: const TextStyle(color: Colors.green),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 if (status != 'ไรเดอร์นำส่งสินค้าแล้ว')
                   TextButton(
-                    onPressed: () => Get.to(() => const ReceivingStatus()),
-                    // Get.to(() => const SendingStatus()),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ReceivingStatus(uid: uid, rid: rid, oid: oid),
+                        ),
+                      );
+                      print('uid: $uid');
+                      print('rid: $rid');
+                      print('oid: $oid');
+                    },
+
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.red,
                       side: const BorderSide(
@@ -256,17 +339,21 @@ class ProductHistoryCard extends StatelessWidget {
   }
 }
 
-// 🔹 Helper function ปลอดภัยสำหรับ Firestore doc
 Future<DocumentSnapshot?> safeGetDoc(String collection, String? id) async {
   if (id == null || id.isEmpty) return null;
   return FirebaseFirestore.instance.collection(collection).doc(id).get();
 }
 
-// 🔹 แท็บ: สินค้าที่ยังส่งไม่เสร็จ
 class InTransitTab extends StatefulWidget {
   final String uid;
   final String rid;
-  const InTransitTab({super.key, required this.uid, required this.rid});
+  final String oid;
+  const InTransitTab({
+    super.key,
+    required this.uid,
+    required this.rid,
+    required this.oid,
+  });
 
   @override
   State<InTransitTab> createState() => _InTransitTabState();
@@ -286,43 +373,48 @@ class _InTransitTabState extends State<InTransitTab> {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('orders')
+          .where('status', isNotEqualTo: 'ไรเดอร์นำส่งสินค้าแล้ว')
           .get();
 
       List<Map<String, dynamic>> tempOrder = [];
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
+      for (var orderData in snapshot.docs) {
+        final data = orderData.data();
         final status = data['status'] ?? '';
-
-        // ✅ เฉพาะที่ยังไม่ส่งเสร็จ
-        if (status != 'ไรเดอร์นำส่งสินค้าแล้ว') {
-          if (data['sender_id'] == widget.uid ||
-              data['receiver_id'] == widget.uid ||
-              data['rider_id'] == widget.rid ||
-              status == 'รอไรเดอร์รับสินค้า') {
-            final senderDoc = await safeGetDoc('users', data['sender_id']);
-            final riderDoc = await safeGetDoc('riders', data['rider_id']);
-
-            tempOrder.add({
-              'order_id': doc.id,
-              'item': data['items'] ?? [],
-              'sender_name': senderDoc != null && senderDoc.exists
-                  ? senderDoc['fullname']
-                  : '',
-              'sender_phone': senderDoc != null && senderDoc.exists
-                  ? senderDoc['phone']
-                  : '',
-              'sender_address': data['sender_address'] ?? '',
-              'rider_name': riderDoc != null && riderDoc.exists
-                  ? riderDoc['fullname']
-                  : '',
-              'rider_phone': riderDoc != null && riderDoc.exists
-                  ? riderDoc['phone']
-                  : '',
-              'status': status,
-              'createAt': data['createAt'] ?? '',
-            });
+        if (data['receiver_id'] == widget.uid ||
+            data['rider_id'] == widget.rid) {
+          if ((data['rider_id'] ?? '').isEmpty) {
+            // print('ข้าม order ${orderData.id} เพราะไม่มี rider_id');
+            continue;
           }
+
+          final senderDoc = await safeGetDoc('users', data['sender_id']);
+          final riderDoc = await safeGetDoc('riders', data['rider_id']);
+
+          print('Fetching rider on orderlist: ${data['rider_id']}');
+          print('Rider exists orderlist: ${riderDoc?.exists}');
+
+          tempOrder.add({
+            'order_id': orderData.id,
+            'item': data['items'] ?? [],
+            'sender_name': senderDoc != null && senderDoc.exists
+                ? senderDoc['fullname']
+                : '',
+            'sender_phone': senderDoc != null && senderDoc.exists
+                ? senderDoc['phone']
+                : '',
+            'sender_address': data['sender_address'] ?? '',
+            'rider_id': data['rider_id'] ?? '',
+            'rider_name': riderDoc != null && riderDoc.exists
+                ? riderDoc['fullname']
+                : '',
+            'rider_phone': riderDoc != null && riderDoc.exists
+                ? riderDoc['phone']
+                : '',
+            'status': status,
+          });
+
+          print('All data : $tempOrder');
         }
       }
 
@@ -367,6 +459,9 @@ class _InTransitTabState extends State<InTransitTab> {
                 riderPhone: order['rider_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์',
                 status: order['status'] ?? '',
                 createAt: order['createAt'] ?? '',
+                uid: widget.uid,
+                rid: order['rider_id'] ?? '',
+                oid: order['order_id'] ?? '',
               );
             }).toList(),
           ),
@@ -376,7 +471,6 @@ class _InTransitTabState extends State<InTransitTab> {
   }
 }
 
-// 🔹 แท็บ: สินค้าที่จัดส่งสำเร็จแล้ว
 class ReceivedTab extends StatefulWidget {
   final String uid;
   final String rid;
@@ -407,8 +501,7 @@ class _ReceivedTabState extends State<ReceivedTab> {
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        if (data['sender_id'] == widget.uid ||
-            data['receiver_id'] == widget.uid ||
+        if (data['receiver_id'] == widget.uid ||
             data['rider_id'] == widget.rid) {
           final senderDoc = await safeGetDoc('users', data['sender_id']);
           final riderDoc = await safeGetDoc('riders', data['rider_id']);
@@ -432,6 +525,7 @@ class _ReceivedTabState extends State<ReceivedTab> {
             'status': data['status'] ?? '',
             'createAt': data['createAt'] ?? '',
           });
+          print('Received data: $tempOrder');
         }
       }
 
@@ -476,6 +570,9 @@ class _ReceivedTabState extends State<ReceivedTab> {
                 riderPhone: order['rider_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์',
                 status: order['status'] ?? '',
                 createAt: order['createAt'] ?? '',
+                uid: widget.uid,
+                rid: widget.rid,
+                oid: '',
               );
             }).toList(),
           ),
