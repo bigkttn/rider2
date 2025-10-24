@@ -1,104 +1,118 @@
 import 'dart:developer';
 import 'dart:io';
+import 'dart:convert';
+
 import 'package:blink_delivery_project/pages/login.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
-
   @override
   State<RegisterPage> createState() => _RegisterPageState();
 }
 
+/// โครงสร้างที่อยู่หลายรายการ
+class _AddrEntry {
+  String label;
+  String address;
+  LatLng latlng;
+  _AddrEntry({
+    required this.label,
+    required this.address,
+    required this.latlng,
+  });
+}
+
 class _RegisterPageState extends State<RegisterPage> {
-  String role = "user"; // ค่าเริ่มต้น: user
+  String role = "user";
   File? _imageFile;
   final ImagePicker _picker = ImagePicker();
 
-  // controller สำหรับ textfield
   final emailCtl = TextEditingController();
   final passwordCtl = TextEditingController();
   final phoneCtl = TextEditingController();
   final fullnameCtl = TextEditingController();
+
+  // เฉพาะ Rider
   final vehicleNumberCtl = TextEditingController();
-  final vehiclePhotoCtl = TextEditingController();
-  final latitude = TextEditingController();
-  final longitude = TextEditingController();
-  final adddress = TextEditingController();
+  File? _vehicleImageFile;
 
-  // Firestore
-  var db = FirebaseFirestore.instance;
-
-  // Map
+  // ที่อยู่ (หลายรายการ)
   final mapController = MapController();
   LatLng? selectedLocation;
+  final addressFieldCtl = TextEditingController();
+  final addressLabelCtl = TextEditingController(text: "ที่อยู่หลัก");
+  final List<_AddrEntry> addressesList = []; // <= เก็บหลายที่
 
-  // รูปพาหนะ
-  File? _vehicleImageFile;
+  final db = FirebaseFirestore.instance;
 
   @override
   void initState() {
     super.initState();
-    _determinePosition(); // 🔹เรียกหาตำแหน่งปัจจุบันทันทีที่เปิดหน้า
+    _determinePosition();
   }
 
-  // ---------- New: เลือกแหล่งรูป (กล้อง/แกลเลอรี) ----------
+  @override
+  void dispose() {
+    emailCtl.dispose();
+    passwordCtl.dispose();
+    phoneCtl.dispose();
+    fullnameCtl.dispose();
+    vehicleNumberCtl.dispose();
+    addressFieldCtl.dispose();
+    addressLabelCtl.dispose();
+    super.dispose();
+  }
+
   Future<ImageSource?> _chooseImageSource() async {
     return showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('ถ่ายจากกล้อง'),
-                onTap: () => Navigator.pop(context, ImageSource.camera),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('เลือกจากแกลเลอรี'),
-                onTap: () => Navigator.pop(context, ImageSource.gallery),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('ถ่ายจากกล้อง'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('เลือกจากแกลเลอรี'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 
-  // ---------- New: ฟังก์ชันเลือกภาพแบบรวม ใช้ได้ทั้งโปรไฟล์/พาหนะ ----------
   Future<void> _pickImageGeneric({required bool isVehicle}) async {
     final source = await _chooseImageSource();
-    if (source == null) return; // ผู้ใช้กดปิด
-
+    if (source == null) return;
     final XFile? pickedFile = await _picker.pickImage(
       source: source,
       maxWidth: 1600,
       maxHeight: 1600,
       imageQuality: 85,
     );
-
     if (pickedFile != null) {
       setState(() {
         if (isVehicle) {
           _vehicleImageFile = File(pickedFile.path);
-          vehiclePhotoCtl.text = pickedFile.path;
         } else {
           _imageFile = File(pickedFile.path);
         }
@@ -106,6 +120,7 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  // ============= UI =============
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -114,8 +129,6 @@ class _RegisterPageState extends State<RegisterPage> {
         child: Column(
           children: [
             const SizedBox(height: 40),
-
-            // Title
             const Text(
               "สมัครสมาชิก",
               style: TextStyle(
@@ -124,10 +137,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 color: Colors.white,
               ),
             ),
-
             const SizedBox(height: 20),
-
-            // Toggle User / Rider
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -136,10 +146,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 _buildRoleButton("ไรเดอร์", "rider"),
               ],
             ),
-
             const SizedBox(height: 20),
 
-            // ฟอร์ม
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -150,187 +158,63 @@ class _RegisterPageState extends State<RegisterPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Upload Profile Image
-                  Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      GestureDetector(
-                        onTap: () => _pickImageGeneric(isVehicle: false),
-                        child: Container(
-                          width: 90,
-                          height: 90,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.grey[300],
-                            border: Border.all(color: Colors.red, width: 2),
-                            image: _imageFile != null
-                                ? DecorationImage(
-                                    image: FileImage(_imageFile!),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
-                          ),
-                          child: _imageFile == null
-                              ? const Center(
-                                  child: Icon(
-                                    Icons.add,
-                                    color: Colors.white,
-                                    size: 30,
-                                  ),
-                                )
-                              : null,
-                        ),
+                  // รูปโปรไฟล์
+                  GestureDetector(
+                    onTap: () => _pickImageGeneric(isVehicle: false),
+                    child: Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey[300],
+                        border: Border.all(color: Colors.red, width: 2),
+                        image: _imageFile != null
+                            ? DecorationImage(
+                                image: FileImage(_imageFile!),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                       ),
-                    ],
+                      child: _imageFile == null
+                          ? const Center(
+                              child: Icon(
+                                Icons.add,
+                                color: Colors.white,
+                                size: 30,
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                   const SizedBox(height: 20),
 
-                  // ฟอร์มที่เหมือนกัน
-                  _buildTextField(
+                  _field(
                     "ชื่อ-นามสกุล",
                     "กรุณากรอกชื่อ-นามสกุล",
                     controller: fullnameCtl,
                   ),
-                  _buildTextField(
-                    "อีเมล",
-                    "กรุณากรอกอีเมล",
-                    controller: emailCtl,
-                  ),
+                  _field("อีเมล", "กรุณากรอกอีเมล", controller: emailCtl),
                   const SizedBox(height: 15),
-                  _buildTextField(
+                  _field(
                     "รหัสผ่าน",
                     "กรุณากรอกรหัสผ่าน",
                     obscure: true,
                     controller: passwordCtl,
                   ),
                   const SizedBox(height: 15),
-                  _buildTextField(
+                  _field(
                     "หมายเลขโทรศัพท์",
                     "กรุณากรอกหมายเลขโทรศัพท์",
                     controller: phoneCtl,
                   ),
-                  const SizedBox(height: 15),
+                  const SizedBox(height: 20),
 
-                  const SizedBox(height: 15),
+                  if (role == "user")
+                    _buildAddressSection(), // << ส่วนหลายที่อยู่
 
-                  // เฉพาะ role = user → มีแผนที่
-                  if (role == "user") ...[
-                    _buildTextField("ที่อยู่", "ที่อยู่", controller: adddress),
-
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 300,
-                      child: FlutterMap(
-                        mapController: mapController,
-                        options: MapOptions(
-                          initialCenter:
-                              selectedLocation ?? LatLng(15.8700317, 100.99254),
-                          initialZoom: 15.2,
-                          onTap: (tapPosition, point) async {
-                            setState(() {
-                              selectedLocation = point;
-                              latitude.text = point.latitude.toString();
-                              longitude.text = point.longitude.toString();
-                            });
-                            List<Placemark> placemarks =
-                                await placemarkFromCoordinates(
-                                  point.latitude,
-                                  point.longitude,
-                                );
-
-                            if (placemarks.isNotEmpty) {
-                              final place = placemarks.first;
-                              final address =
-                                  "${place.street}, ${place.subLocality}, ${place.locality}, ${place.administrativeArea}, ${place.postalCode}, ${place.country}";
-
-                              setState(() {
-                                adddress.text = address;
-                              });
-                            }
-                            log("เลือกพิกัด: $point");
-                          },
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=d7b6821f750e49e2864ef759ef2223ec',
-                            userAgentPackageName: 'com.example.my_rider',
-                            maxNativeZoom: 18,
-                          ),
-                          if (selectedLocation != null)
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  point: selectedLocation!,
-                                  width: 40,
-                                  height: 40,
-                                  child: const Icon(
-                                    Icons.location_on,
-                                    size: 40,
-                                    color: Colors.red,
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  // เฉพาะ role = rider → ฟิลด์เพิ่ม
-                  if (role == "rider") ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        "รูปถ่ายพาหนะ",
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFFF3B30),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    GestureDetector(
-                      onTap: () => _pickImageGeneric(isVehicle: true),
-                      child: Container(
-                        height: 150,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.red),
-                          borderRadius: BorderRadius.circular(10),
-                          color: Colors.grey[200],
-                          image: _vehicleImageFile != null
-                              ? DecorationImage(
-                                  image: FileImage(_vehicleImageFile!),
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
-                        ),
-                        child: _vehicleImageFile == null
-                            ? const Center(
-                                child: Icon(
-                                  Icons.add_a_photo,
-                                  color: Colors.red,
-                                  size: 40,
-                                ),
-                              )
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                    _buildTextField(
-                      "ทะเบียนรถ",
-                      "กรุณากรอกทะเบียนรถ",
-                      controller: vehicleNumberCtl,
-                    ),
-                    const SizedBox(height: 15),
-                  ],
+                  if (role == "rider") _buildRiderExtras(),
 
                   const SizedBox(height: 25),
-
-                  // Register button
                   SizedBox(
                     width: 200,
                     height: 45,
@@ -358,9 +242,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     children: [
                       const Text("หากเป็นสมาชิกแล้ว?"),
                       InkWell(
-                        onTap: () {
-                          Get.to(() => const LoginPage());
-                        },
+                        onTap: () => Get.to(() => const LoginPage()),
                         child: const Text(
                           ' เข้าสู่ระบบ',
                           style: TextStyle(
@@ -381,9 +263,176 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // ปุ่มเลือก role
+  // ====== Widgets ======
+  Widget _buildAddressSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label("ที่อยู่ (เลือกจากแผนที่ แล้วกดเพิ่มได้หลายที่)"),
+        const SizedBox(height: 8),
+        TextField(
+          controller: addressLabelCtl,
+          decoration: InputDecoration(
+            labelText: "ป้ายชื่อที่อยู่ (เช่น บ้าน/ที่ทำงาน)",
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 300,
+          child: FlutterMap(
+            mapController: mapController,
+            options: MapOptions(
+              initialCenter:
+                  selectedLocation ?? const LatLng(15.8700317, 100.99254),
+              initialZoom: 15.2,
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+              ),
+              onTap: (tap, point) async {
+                setState(() => selectedLocation = point);
+                final placemarks = await placemarkFromCoordinates(
+                  point.latitude,
+                  point.longitude,
+                );
+                if (placemarks.isNotEmpty) {
+                  final p = placemarks.first;
+                  addressFieldCtl.text =
+                      "${p.street}, ${p.subLocality}, ${p.locality}, ${p.administrativeArea}, ${p.postalCode}, ${p.country}";
+                }
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate:
+                    'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=d7b6821f750e49e2864ef759ef2223ec',
+                userAgentPackageName: 'com.example.my_rider',
+                maxNativeZoom: 18,
+              ),
+              if (selectedLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: selectedLocation!,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_on,
+                        color: Colors.red,
+                        size: 40,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: addressFieldCtl,
+          decoration: InputDecoration(
+            labelText: "ที่อยู่ที่เลือก",
+            hintText: "แตะบนแผนที่เพื่อเลือกที่อยู่",
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          maxLines: 2,
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            onPressed: _addCurrentAddressToList,
+            icon: const Icon(Icons.add_location_alt),
+            label: const Text("เพิ่มที่อยู่นี้"),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF3B30),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // ลิสต์ที่อยู่หลายรายการ
+        if (addressesList.isNotEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _label("ที่อยู่ที่เพิ่มแล้ว (${addressesList.length})"),
+              const SizedBox(height: 6),
+              ...addressesList.asMap().entries.map((e) {
+                final i = e.key;
+                final a = e.value;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.place, color: Colors.red),
+                    title: Text(a.label),
+                    subtitle: Text(
+                      "${a.address}\n(${a.latlng.latitude.toStringAsFixed(6)}, "
+                      "${a.latlng.longitude.toStringAsFixed(6)})",
+                    ),
+                    isThreeLine: true,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () =>
+                          setState(() => addressesList.removeAt(i)),
+                    ),
+                    onTap: () {
+                      mapController.move(a.latlng, 16);
+                      setState(() {
+                        selectedLocation = a.latlng;
+                        addressFieldCtl.text = a.address;
+                        addressLabelCtl.text = a.label;
+                      });
+                    },
+                  ),
+                );
+              }),
+            ],
+          ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildRiderExtras() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label("รูปถ่ายพาหนะ"),
+        const SizedBox(height: 5),
+        GestureDetector(
+          onTap: () => _pickImageGeneric(isVehicle: true),
+          child: Container(
+            height: 150,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.red),
+              borderRadius: BorderRadius.circular(10),
+              color: Colors.grey[200],
+              image: _vehicleImageFile != null
+                  ? DecorationImage(
+                      image: FileImage(_vehicleImageFile!),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: _vehicleImageFile == null
+                ? const Center(
+                    child: Icon(Icons.add_a_photo, color: Colors.red, size: 40),
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(height: 15),
+        _field("ทะเบียนรถ", "กรุณากรอกทะเบียนรถ", controller: vehicleNumberCtl),
+        const SizedBox(height: 10),
+      ],
+    );
+  }
+
+  // ====== Helpers ======
   Widget _buildRoleButton(String text, String value) {
-    bool isSelected = role == value;
+    final isSelected = role == value;
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => role = value),
@@ -409,8 +458,16 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // custom textfield
-  Widget _buildTextField(
+  Widget _label(String t) => Text(
+    t,
+    style: const TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.bold,
+      color: Color(0xFFFF3B30),
+    ),
+  );
+
+  Widget _field(
     String label,
     String hint, {
     bool obscure = false,
@@ -419,14 +476,7 @@ class _RegisterPageState extends State<RegisterPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFFF3B30),
-          ),
-        ),
+        _label(label),
         const SizedBox(height: 5),
         TextField(
           controller: controller,
@@ -441,55 +491,120 @@ class _RegisterPageState extends State<RegisterPage> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
         ),
+        const SizedBox(height: 10),
       ],
     );
   }
 
-  // ฟังก์ชันเข้ารหัสรหัสผ่านด้วย SHA256
-  String hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
+  void _addCurrentAddressToList() {
+    if (selectedLocation == null || addressFieldCtl.text.trim().isEmpty) {
+      Get.snackbar(
+        'ที่อยู่ไม่ครบ',
+        'แตะเลือกพิกัดบนแผนที่และตรวจสอบช่องที่อยู่',
+      );
+      return;
+    }
+    final label = addressLabelCtl.text.trim().isEmpty
+        ? "ที่อยู่ ${addressesList.length + 1}"
+        : addressLabelCtl.text.trim();
+    final entry = _AddrEntry(
+      label: label,
+      address: addressFieldCtl.text.trim(),
+      latlng: selectedLocation!,
+    );
+    setState(() {
+      addressesList.add(entry);
+      // เตรียมกรอกที่อยู่ถัดไป
+      addressLabelCtl.text = "ที่อยู่ ${addressesList.length + 1}";
+      addressFieldCtl.clear();
+    });
   }
 
-  // เพิ่มข้อมูลเข้า Firestore
-  void adddata() async {
+  // ====== Register ======
+  String hashPassword(String password) {
+    final bytes = utf8.encode(password);
+    return sha256.convert(bytes).toString();
+  }
+
+  Future<String?> uploadToCloudinary(File file) async {
     try {
-      String collectionName = role == "rider" ? "riders" : "users";
+      const cloudName = "dywfdy174";
+      const uploadPreset = "flutter_upload";
+      final url = Uri.parse(
+        "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
+      );
 
-      String email = emailCtl.text.trim();
-      String phone = phoneCtl.text.trim();
+      final req = http.MultipartRequest("POST", url)
+        ..fields['upload_preset'] = uploadPreset
+        ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-      // ✅ ตรวจสอบ email/phone ซ้ำในทั้ง users และ riders
-      var emailInUsers = await db
-          .collection("users")
-          .where('email', isEqualTo: email)
-          .get();
-      var emailInRiders = await db
-          .collection("riders")
-          .where('email', isEqualTo: email)
-          .get();
+      final res = await req.send();
+      if (res.statusCode == 200) {
+        final data = jsonDecode(await res.stream.bytesToString());
+        return data['secure_url'];
+      }
+      return null;
+    } catch (e) {
+      log("Upload error: $e");
+      return null;
+    }
+  }
 
-      if (emailInUsers.docs.isNotEmpty || emailInRiders.docs.isNotEmpty) {
-        Get.snackbar('ผิดพลาด', 'อีเมลนี้ถูกใช้แล้ว');
+  Future<void> adddata() async {
+    try {
+      final collectionName = role == "rider" ? "riders" : "users";
+      final email = emailCtl.text.trim();
+      final phone = phoneCtl.text.trim();
+      final fullName = fullnameCtl.text.trim();
+      final pass = passwordCtl.text.trim();
+
+      if (email.isEmpty || phone.isEmpty || fullName.isEmpty || pass.isEmpty) {
+        Get.snackbar(
+          'กรอกไม่ครบ',
+          'กรุณากรอก ชื่อ, อีเมล, เบอร์โทร และรหัสผ่าน',
+        );
         return;
       }
 
-      var phoneInUsers = await db
-          .collection("users")
-          .where('phone', isEqualTo: phone)
-          .get();
-      var phoneInRiders = await db
-          .collection("riders")
-          .where('phone', isEqualTo: phone)
-          .get();
-
-      if (phoneInUsers.docs.isNotEmpty || phoneInRiders.docs.isNotEmpty) {
-        Get.snackbar('ผิดพลาด', 'เบอร์โทรศัพท์นี้ถูกใช้แล้ว');
+      // ผู้ใช้ต้องมีอย่างน้อย 1 ที่อยู่ + 1 พิกัด
+      if (role == "user" && addressesList.isEmpty) {
+        Get.snackbar(
+          'ต้องมีที่อยู่อย่างน้อย 1 ที่',
+          'กดปุ่ม "เพิ่มที่อยู่นี้" เพื่อบันทึกเข้า list',
+        );
+        return;
+      }
+      if (role == "rider" && vehicleNumberCtl.text.trim().isEmpty) {
+        Get.snackbar('กรอกไม่ครบ', 'กรุณากรอกทะเบียนรถ');
         return;
       }
 
-      // ✅ อัปโหลดรูปโปรไฟล์
+      // กันซ้ำเฉพาะคอลเลกชันตัวเอง
+      final dupEmail = await db
+          .collection(collectionName)
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (dupEmail.docs.isNotEmpty) {
+        Get.snackbar(
+          'อีเมลถูกใช้แล้ว',
+          'อีเมลนี้มีอยู่ใน $collectionName แล้ว',
+        );
+        return;
+      }
+      final dupPhone = await db
+          .collection(collectionName)
+          .where('phone', isEqualTo: phone)
+          .limit(1)
+          .get();
+      if (dupPhone.docs.isNotEmpty) {
+        Get.snackbar(
+          'เบอร์โทรถูกใช้แล้ว',
+          'เบอร์นี้มีอยู่ใน $collectionName แล้ว',
+        );
+        return;
+      }
+
       String? profileUrl;
       if (_imageFile != null) {
         profileUrl = await uploadToCloudinary(_imageFile!);
@@ -499,18 +614,16 @@ class _RegisterPageState extends State<RegisterPage> {
         }
       }
 
-      // ✅ เตรียมข้อมูลพื้นฐาน (hash password ก่อนเก็บ)
-      var userData = {
+      final userData = <String, dynamic>{
         'role': role,
         'email': email,
-        'password': hashPassword(passwordCtl.text.trim()),
+        'password': hashPassword(pass),
         'phone': phone,
-        'fullname': fullnameCtl.text.trim(),
+        'fullname': fullName,
         'profile_photo': profileUrl,
         'created_at': FieldValue.serverTimestamp(),
       };
 
-      // ✅ กรณี rider → อัปโหลดรูปพาหนะ
       if (role == "rider") {
         String? vehicleUrl;
         if (_vehicleImageFile != null) {
@@ -520,37 +633,36 @@ class _RegisterPageState extends State<RegisterPage> {
             return;
           }
         }
-
         userData.addAll({
           'vehicle_number': vehicleNumberCtl.text.trim(),
           'vehicle_photo': vehicleUrl,
-          'latitude': '', // ✅ เพิ่มค่าเริ่มต้นว่าง
-          'longitude': '', // ✅ เพิ่มค่าเริ่มต้นว่าง
+          'latitude': null,
+          'longitude': null,
+          'last_update': null,
         });
       }
 
-      // ✅ บันทึกข้อมูลผู้ใช้ลง Firestore
-      DocumentReference userDocRef = await db
-          .collection(collectionName)
-          .add(userData);
+      final docRef = await db.collection(collectionName).add(userData);
 
-      // ✅ ถ้าเป็น user → บันทึกที่อยู่ใน subcollection ใต้ user
-      if (role == "user" && selectedLocation != null) {
-        var addressData = {
-          'address': adddress.text.trim(),
-          'latitude': latitude.text.trim(),
-          'longitude': longitude.text.trim(),
-          'created_at': FieldValue.serverTimestamp(),
-        };
-
-        await db
-            .collection("users")
-            .doc(userDocRef.id)
-            .collection("addresses")
-            .add(addressData);
+      // บันทึกหลายที่อยู่ลง subcollection
+      if (role == "user" && addressesList.isNotEmpty) {
+        final batch = db.batch();
+        final addrCol = db
+            .collection('users')
+            .doc(docRef.id)
+            .collection('addresses');
+        for (final a in addressesList) {
+          batch.set(addrCol.doc(), {
+            'label': a.label,
+            'address': a.address,
+            'latitude': a.latlng.latitude.toString(),
+            'longitude': a.latlng.longitude.toString(),
+            'created_at': FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
       }
 
-      // ✅ แสดงข้อความสำเร็จ
       Get.snackbar('สำเร็จ', 'สมัครสมาชิกเรียบร้อย');
       Get.to(() => const LoginPage());
     } catch (e) {
@@ -559,17 +671,14 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  // ====== Location ======
   Future<void> _determinePosition() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       Get.snackbar("ผิดพลาด", "กรุณาเปิด GPS");
       return;
     }
-
-    permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
@@ -577,67 +686,26 @@ class _RegisterPageState extends State<RegisterPage> {
         return;
       }
     }
-
     if (permission == LocationPermission.deniedForever) {
       Get.snackbar("ผิดพลาด", "ไม่ได้รับสิทธิ์ถาวร");
       return;
     }
 
-    // ดึงตำแหน่งปัจจุบัน
-    Position position = await Geolocator.getCurrentPosition(
+    final pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
+    setState(() => selectedLocation = LatLng(pos.latitude, pos.longitude));
 
-    setState(() {
-      selectedLocation = LatLng(position.latitude, position.longitude);
-      latitude.text = position.latitude.toString();
-      longitude.text = position.longitude.toString();
-    });
-
-    // 🔹 Reverse geocoding → แปลงพิกัดเป็นชื่อที่อยู่
-    List<Placemark> placemarks = await placemarkFromCoordinates(
-      position.latitude,
-      position.longitude,
+    final placemarks = await placemarkFromCoordinates(
+      pos.latitude,
+      pos.longitude,
     );
-
     if (placemarks.isNotEmpty) {
-      final place = placemarks.first;
-      final address =
-          "${place.street}, ${place.subLocality}, ${place.locality}, ${place.administrativeArea}, ${place.postalCode}, ${place.country}";
-
-      setState(() {
-        adddress.text = address;
-      });
+      final p = placemarks.first;
+      addressFieldCtl.text =
+          "${p.street}, ${p.subLocality}, ${p.locality}, ${p.administrativeArea}, ${p.postalCode}, ${p.country}";
     }
 
-    // ย้ายกล้องไปตำแหน่งนั้น
-    mapController.move(LatLng(position.latitude, position.longitude), 16);
-  }
-
-  Future<String?> uploadToCloudinary(File imageFile) async {
-    try {
-      const cloudName = "dywfdy174";
-      const uploadPreset = "flutter_upload";
-
-      final url = Uri.parse(
-        "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
-      );
-
-      var request = http.MultipartRequest("POST", url)
-        ..fields['upload_preset'] = uploadPreset
-        ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
-
-      var response = await request.send();
-      if (response.statusCode == 200) {
-        var responseData = await response.stream.bytesToString();
-        var jsonData = jsonDecode(responseData);
-        return jsonData['secure_url']; // ✅ ได้ URL กลับมา
-      } else {
-        return null;
-      }
-    } catch (e) {
-      print("Upload error: $e");
-      return null;
-    }
+    mapController.move(LatLng(pos.latitude, pos.longitude), 16);
   }
 }

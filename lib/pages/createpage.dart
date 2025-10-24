@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class Createpage extends StatefulWidget {
   final String uid;
@@ -16,7 +18,6 @@ class Createpage extends StatefulWidget {
 }
 
 class _CreatepageState extends State<Createpage> {
-  final TextEditingController _searchController = TextEditingController();
   final TextEditingController detailCtl = TextEditingController();
   final TextEditingController phoneSearchCtl = TextEditingController();
 
@@ -25,6 +26,7 @@ class _CreatepageState extends State<Createpage> {
   String? _imageUrl;
 
   bool isCreate = false;
+
   UserModel? sender;
   AddressModel? senderAddress;
 
@@ -33,13 +35,23 @@ class _CreatepageState extends State<Createpage> {
 
   List<Map<String, dynamic>> items = [];
 
+  // for map preview
+  final MapController _map = MapController();
+
   @override
   void initState() {
     super.initState();
     _loadSender();
   }
 
-  /// ✅ โหลดข้อมูลผู้ส่ง (เช็ก mounted ปลอดภัย)
+  @override
+  void dispose() {
+    detailCtl.dispose();
+    phoneSearchCtl.dispose();
+    super.dispose();
+  }
+
+  /// โหลดข้อมูลผู้ส่ง + ที่อยู่ (ถ้ามีหลายที่ ให้เลือก)
   Future<void> _loadSender() async {
     try {
       final userDoc = await FirebaseFirestore.instance
@@ -68,17 +80,17 @@ class _CreatepageState extends State<Createpage> {
       }
 
       if (addrSnap.docs.length > 1) {
-        List<AddressModel> addresses = addrSnap.docs
+        final addresses = addrSnap.docs
             .map((d) => AddressModel.fromMap(d.id, d.data()))
             .toList();
 
         if (!mounted) return;
-        AddressModel? selected = await showDialog<AddressModel>(
+        final selected = await showDialog<AddressModel>(
           context: context,
           builder: (context) => SimpleDialog(
             title: const Text("เลือกที่อยู่ของผู้ส่ง"),
             children: [
-              for (var addr in addresses)
+              for (final addr in addresses)
                 SimpleDialogOption(
                   onPressed: () => Navigator.pop(context, addr),
                   child: Padding(
@@ -104,14 +116,14 @@ class _CreatepageState extends State<Createpage> {
 
       if (mounted) setState(() {});
     } catch (e) {
-      print("❌ โหลดข้อมูลผู้ส่งล้มเหลว: $e");
+      debugPrint("❌ โหลดข้อมูลผู้ส่งล้มเหลว: $e");
     }
   }
 
-  /// ✅ ค้นหาผู้รับด้วยเบอร์โทร
+  /// ค้นหาผู้รับด้วยเบอร์โทร (2.1.2)
   Future<void> _searchReceiverByPhone() async {
     try {
-      String phone = phoneSearchCtl.text.trim();
+      final phone = phoneSearchCtl.text.trim();
       if (phone.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -154,18 +166,18 @@ class _CreatepageState extends State<Createpage> {
       }
 
       if (addrSnap.docs.length > 1) {
-        List<AddressModel> addresses = addrSnap.docs
+        final addresses = addrSnap.docs
             .map((d) => AddressModel.fromMap(d.id, d.data()))
             .toList();
 
         if (!mounted) return;
 
-        AddressModel? selected = await showDialog<AddressModel>(
+        final selected = await showDialog<AddressModel>(
           context: context,
           builder: (context) => SimpleDialog(
             title: const Text("เลือกที่อยู่ของผู้รับ"),
             children: [
-              for (var addr in addresses)
+              for (final addr in addresses)
                 SimpleDialogOption(
                   onPressed: () => Navigator.pop(context, addr),
                   child: Padding(
@@ -196,8 +208,172 @@ class _CreatepageState extends State<Createpage> {
         );
       }
     } catch (e) {
-      print("❌ ค้นหาผู้รับล้มเหลว: $e");
+      debugPrint('❌ ค้นหาผู้รับล้มเหลว: $e');
     }
+  }
+
+  /// เลือกผู้รับจาก “ลิสต์ผู้ใช้ทั้งหมด” (2.1.1 ต้องมีลิสต์ให้เลือก)
+  Future<void> _openReceiverPicker() async {
+    final snap = await FirebaseFirestore.instance.collection('users').get();
+    if (!mounted) return;
+
+    final allUsers = snap.docs
+        .where((d) => d.id != sender?.uid) // ตัดผู้ส่งออก
+        .map((d) => UserModel.fromMap(d.id, d.data()))
+        .toList();
+
+    final chosen = await showModalBottomSheet<UserModel>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final qCtl = TextEditingController();
+        List<UserModel> list = List.of(allUsers);
+
+        void filter(String q) {
+          final lower = q.toLowerCase();
+          list = allUsers.where((u) {
+            return u.fullname.toLowerCase().contains(lower) ||
+                u.phone.toLowerCase().contains(lower) ||
+                u.email.toLowerCase().contains(lower);
+          }).toList();
+          // refresh bottom sheet
+          (ctx as Element).markNeedsBuild();
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.7,
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'เลือกรายชื่อผู้รับ',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: TextField(
+                      controller: qCtl,
+                      onChanged: filter,
+                      decoration: InputDecoration(
+                        hintText: 'ค้นหาชื่อ/อีเมล/เบอร์',
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Color(0xffff3b30),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: list.length,
+                      itemBuilder: (_, i) {
+                        final u = list[i];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundImage: u.imageUrl.isNotEmpty
+                                ? NetworkImage(u.imageUrl)
+                                : const AssetImage('assets/avatar.png')
+                                      as ImageProvider,
+                          ),
+                          title: Text(u.fullname),
+                          subtitle: Text('${u.phone}  |  ${u.email}'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.pop(ctx, u),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (chosen == null) return;
+
+    // โหลดที่อยู่ของผู้รับที่เลือก (ถ้ามีหลายที่ให้เลือก)
+    final addrSnap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(chosen.uid)
+        .collection('addresses')
+        .get();
+
+    if (!mounted) return;
+
+    if (addrSnap.docs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("ผู้รับรายนี้ยังไม่มีที่อยู่ในระบบ")),
+      );
+      return;
+    }
+
+    AddressModel? chosenAddr;
+    if (addrSnap.docs.length > 1) {
+      final addresses = addrSnap.docs
+          .map((d) => AddressModel.fromMap(d.id, d.data()))
+          .toList();
+
+      chosenAddr = await showDialog<AddressModel>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text("เลือกที่อยู่ของผู้รับ"),
+          children: [
+            for (final addr in addresses)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, addr),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(addr.address ?? "ไม่ทราบที่อยู่"),
+                ),
+              ),
+          ],
+        ),
+      );
+      if (chosenAddr == null) return;
+    } else {
+      chosenAddr = AddressModel.fromMap(
+        addrSnap.docs.first.id,
+        addrSnap.docs.first.data(),
+      );
+    }
+
+    setState(() {
+      receiver = chosen;
+      receiverAddress = chosenAddr;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("✅ เลือกผู้รับจากลิสต์สำเร็จ")),
+    );
   }
 
   Future<void> pickFromGallery() async {
@@ -218,30 +394,21 @@ class _CreatepageState extends State<Createpage> {
         "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
       );
 
-      var request = http.MultipartRequest("POST", url)
+      final request = http.MultipartRequest("POST", url)
         ..fields['upload_preset'] = uploadPreset
         ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
 
-      var response = await request.send();
+      final response = await request.send();
       if (response.statusCode == 200) {
-        var jsonData = jsonDecode(await response.stream.bytesToString());
+        final jsonData = jsonDecode(await response.stream.bytesToString());
         return jsonData['secure_url'];
-      } else {
-        print("❌ Upload failed: ${response.statusCode}");
-        return null;
       }
+      debugPrint("❌ Upload failed: ${response.statusCode}");
+      return null;
     } catch (e) {
-      print('❌ Upload Error: $e');
+      debugPrint('❌ Upload Error: $e');
       return null;
     }
-  }
-
-  @override
-  void dispose() {
-    detailCtl.dispose();
-    _searchController.dispose();
-    phoneSearchCtl.dispose();
-    super.dispose();
   }
 
   @override
@@ -277,7 +444,7 @@ class _CreatepageState extends State<Createpage> {
                   children: [
                     const SizedBox(height: 40),
                     if (isCreate) _buildSenderInfo(),
-                    if (isCreate) _buildReceiverSearch(),
+                    if (isCreate) _buildReceiverSection(),
                     if (isCreate) _buildProductForm(),
                     if (!isCreate)
                       TextButton.icon(
@@ -299,6 +466,27 @@ class _CreatepageState extends State<Createpage> {
           ),
           _buildHeader(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              "สร้างรายการส่งสินค้า",
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -357,41 +545,102 @@ class _CreatepageState extends State<Createpage> {
     );
   }
 
-  /// ✅ ช่องค้นหาผู้รับ
-  Widget _buildReceiverSearch() {
+  /// ส่วนผู้รับ: ค้นจากเบอร์ + เลือกจากลิสต์ + แผนที่ Preview (2.1.1–2.1.4)
+  Widget _buildReceiverSection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: phoneSearchCtl,
-            keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              labelText: 'ค้นหาผู้รับด้วยเบอร์โทรศัพท์',
-              prefixIcon: const Icon(Icons.phone, color: Color(0xffff3b30)),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: _searchReceiverByPhone,
+          // แถวปุ่ม 2 วิธี: เลือกจากลิสต์ / ค้นจากเบอร์
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _openReceiverPicker,
+                  icon: const Icon(Icons.list),
+                  label: const Text('เลือกรายชื่อ'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xffff3b30),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
               ),
-              filled: true,
-              fillColor: Colors.grey[100],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: phoneSearchCtl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'ค้นหาด้วยเบอร์',
+                    prefixIcon: const Icon(
+                      Icons.phone,
+                      color: Color(0xffff3b30),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: _searchReceiverByPhone,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
+          const SizedBox(height: 10),
+
+          // การ์ดรายละเอียดผู้รับ (2.1.3)
           if (receiver != null)
             Card(
-              margin: const EdgeInsets.only(top: 10),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: receiver!.imageUrl.isNotEmpty
-                      ? NetworkImage(receiver!.imageUrl)
-                      : const AssetImage("assets/avatar.png") as ImageProvider,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundImage: receiver!.imageUrl.isNotEmpty
+                          ? NetworkImage(receiver!.imageUrl)
+                          : const AssetImage("assets/avatar.png")
+                                as ImageProvider,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            receiver!.fullname,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('โทร: ${receiver!.phone}'),
+                          Text('อีเมล: ${receiver!.email}'),
+                          Text('ที่อยู่: ${receiverAddress?.address ?? "-"}'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                title: Text(receiver!.fullname),
-                subtitle: Text(receiverAddress?.address ?? 'ไม่มีที่อยู่'),
+              ),
+            ),
+
+          // แผนที่ Preview (2.1.4)
+          if (receiverAddress != null && senderAddress != null)
+            _ReceiverMapPreview(
+              map: _map,
+              sender: LatLng(
+                double.tryParse(senderAddress!.latitude ?? '') ?? 0,
+                double.tryParse(senderAddress!.longitude ?? '') ?? 0,
+              ),
+              recv: LatLng(
+                double.tryParse(receiverAddress!.latitude ?? '') ?? 0,
+                double.tryParse(receiverAddress!.longitude ?? '') ?? 0,
               ),
             ),
         ],
@@ -399,7 +648,7 @@ class _CreatepageState extends State<Createpage> {
     );
   }
 
-  /// ✅ แบบฟอร์มสินค้า
+  /// แบบฟอร์มสินค้า + อัปโหลดรูป (2.1.5)
   Widget _buildProductForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -537,7 +786,7 @@ class _CreatepageState extends State<Createpage> {
     );
   }
 
-  /// ✅ บันทึกทั้งหมดลง Firestore (เพิ่ม latitude / longitude)
+  /// บันทึก order ลง Firestore
   Future<void> _saveAllToFirestore() async {
     if (sender == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -545,21 +794,18 @@ class _CreatepageState extends State<Createpage> {
       );
       return;
     }
-
     if (receiver == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("กรุณาค้นหาผู้รับก่อน")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("กรุณาค้นหาหรือเลือกรายชื่อผู้รับ")),
+      );
       return;
     }
-
     if (items.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("ยังไม่มีสินค้าในรายการ")));
       return;
     }
-
     if (senderAddress?.latitude == null ||
         senderAddress?.longitude == null ||
         receiverAddress?.latitude == null ||
@@ -570,7 +816,7 @@ class _CreatepageState extends State<Createpage> {
       return;
     }
 
-    var ordersData = {
+    final ordersData = {
       'sender_id': sender!.uid,
       'receiver_id': receiver!.uid,
       'rider_id': '',
@@ -587,10 +833,9 @@ class _CreatepageState extends State<Createpage> {
       'image_delivered': '',
     };
 
-    DocumentReference docRef = await FirebaseFirestore.instance
+    final docRef = await FirebaseFirestore.instance
         .collection('orders')
         .add(ordersData);
-
     await docRef.update({'order_id': docRef.id});
 
     setState(() {
@@ -604,25 +849,117 @@ class _CreatepageState extends State<Createpage> {
       context,
     ).showSnackBar(const SnackBar(content: Text("บันทึกรายการสำเร็จ 🎉")));
   }
+}
 
-  Widget _buildHeader() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "สร้างรายการส่งสินค้า",
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
+/// ---------- แผนที่ Preview ผู้ส่ง/ผู้รับ (Thunderforest) ----------
+class _ReceiverMapPreview extends StatefulWidget {
+  final MapController map;
+  final LatLng sender;
+  final LatLng recv;
+  const _ReceiverMapPreview({
+    required this.map,
+    required this.sender,
+    required this.recv,
+    super.key,
+  });
+
+  @override
+  State<_ReceiverMapPreview> createState() => _ReceiverMapPreviewState();
+}
+
+class _ReceiverMapPreviewState extends State<_ReceiverMapPreview> {
+  static const String _tfStyle = 'atlas';
+  static const String _apiKey = 'd7b6821f750e49e2864ef759ef2223ec';
+
+  static const double _kMinZoom = 15;
+  static const double _kInitZoom = 16;
+  static const double _kMaxZoom = 22;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final bounds = LatLngBounds.fromPoints([widget.sender, widget.recv]);
+      widget.map.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(20)),
+      );
+      if (widget.map.camera.zoom < _kMinZoom) {
+        widget.map.move(widget.map.camera.center, _kMinZoom);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final markers = <Marker>[
+      Marker(
+        point: widget.sender,
+        width: 40,
+        height: 40,
+        child: const Icon(Icons.store, color: Colors.green, size: 38),
       ),
+      Marker(
+        point: widget.recv,
+        width: 40,
+        height: 40,
+        child: const Icon(Icons.location_on, color: Colors.blue, size: 40),
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(8, 8, 8, 6),
+          child: Text(
+            'แผนที่ผู้ส่ง ↔ ผู้รับ',
+            style: TextStyle(
+              color: Color(0xffff3b30),
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        Container(
+          height: 240,
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xffff3b30), width: 3),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: FlutterMap(
+              mapController: widget.map,
+              options: MapOptions(
+                initialCenter: widget.sender,
+                initialZoom: _kInitZoom,
+                minZoom: _kMinZoom,
+                maxZoom: _kMaxZoom,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.thunderforest.com/$_tfStyle/{z}/{x}/{y}.png?apikey=$_apiKey',
+                  userAgentPackageName: 'com.blink.delivery',
+                  maxNativeZoom: 22,
+                  maxZoom: _kMaxZoom,
+                ),
+                MarkerLayer(markers: markers),
+                const RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution('© OpenStreetMap contributors'),
+                    TextSourceAttribution('Tiles © Thunderforest'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
