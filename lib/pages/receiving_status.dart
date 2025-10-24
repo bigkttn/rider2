@@ -10,6 +10,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 
+/// ---------------------------------------------------------
+/// ReceivingStatus — UI สวยขึ้น + แก้ปัญหา UI ซ้อนกัน
+/// - Gradient AppBar + ใช้ bottom: PreferredSize วาง StatusTracker (ไม่ทับ)
+/// - FlutterMap ตัวเดียว (TileLayer + MarkerLayer) ป้องกันซ้อน/ทับ
+/// - เอา const ออกจากจุดที่ไม่ควร const (TileLayer / children)
+/// ---------------------------------------------------------
 class ReceivingStatus extends StatefulWidget {
   final String uid, rid, oid;
   const ReceivingStatus({
@@ -27,26 +33,57 @@ class _ReceivingStatusState extends State<ReceivingStatus> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xffff3b30),
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(150.0),
-        child: AppBar(
-          backgroundColor: const Color(0xffff3b30),
-          elevation: 0,
-          flexibleSpace: Padding(
-            padding: const EdgeInsets.only(top: 50.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'สถานะการจัดส่ง',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
+      backgroundColor: const Color(0xfffef2f2),
+      appBar: AppBar(
+        elevation: 0,
+        // เปลี่ยนเป็น false ถ้าไม่ต้องการลูกศรย้อนกลับ
+        automaticallyImplyLeading: true,
+        backgroundColor: Colors.transparent,
+        title: const Text(
+          'สถานะการจัดส่ง',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        centerTitle: false,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xffff3b30), Color(0xfffb6a5b)],
+            ),
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -30,
+                top: -20,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(height: 20),
+              ),
+            ],
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(80),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'รหัสคำสั่งซื้อ: ${widget.oid}',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(.9),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 10),
                 StatusTracker(
                   oid: widget.oid,
                   uid: widget.uid,
@@ -57,8 +94,6 @@ class _ReceivingStatusState extends State<ReceivingStatus> {
           ),
         ),
       ),
-
-      // ✅ ป้องกัน bottom overflow และทำพื้นหลังสีขาวมุมโค้งบน 20
       body: LayoutBuilder(
         builder: (context, constraints) {
           final bottomInset = MediaQuery.of(context).viewInsets.bottom;
@@ -70,27 +105,38 @@ class _ReceivingStatusState extends State<ReceivingStatus> {
                 decoration: const BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(20), // ✅ โค้งมุมบน 20
-                    topRight: Radius.circular(20),
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
                   ),
                 ),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const _SectionHeader(icon: Icons.person, text: 'ไรเดอร์'),
+                    const SizedBox(height: 8),
                     RiderContact(
                       uid: widget.uid,
                       rid: widget.rid,
                       oid: widget.oid,
                     ),
                     const SizedBox(height: 16),
-                    // ✅ subscribe เฉพาะออเดอร์นี้ใบเดียว
+                    const _SectionHeader(
+                      icon: Icons.map_outlined,
+                      text: 'ตำแหน่งล่าสุด',
+                    ),
+                    const SizedBox(height: 8),
                     MapReceive(
                       uid: widget.uid,
                       rid: widget.rid,
                       oid: widget.oid,
                     ),
                     const SizedBox(height: 16),
+                    const _SectionHeader(
+                      icon: Icons.inventory_2_outlined,
+                      text: 'รายละเอียดสินค้า',
+                    ),
+                    const SizedBox(height: 8),
                     ProductDetail(oid: widget.oid, uid: widget.uid),
                   ],
                 ),
@@ -103,7 +149,33 @@ class _ReceivingStatusState extends State<ReceivingStatus> {
   }
 }
 
-/// ---------------- Rider (ซ่อนไว้ถ้ายังไม่มี rider) ----------------
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _SectionHeader({required this.icon, required this.text});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xffffefe9),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: const Color(0xfffb6a5b), size: 18),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+}
+
+/// ---------------- Rider (ListTile สวย + กันข้อความชนปุ่ม) ----------------
 class RiderContact extends StatefulWidget {
   final String uid;
   final String rid;
@@ -175,124 +247,135 @@ class _RiderContactState extends State<RiderContact> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (!_hasRider) return const SizedBox.shrink();
+    if (!_hasRider) return const _EmptyHint(text: 'ระบบกำลังหาไรเดอร์ให้คุณ…');
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 5.0, left: 20),
-          child: Text(
-            'ไรเดอร์',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: ListTile(
+          isThreeLine: true,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 8,
+            horizontal: 8,
           ),
-        ),
-        Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+          leading: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundImage: (riderProfile ?? '').isNotEmpty
+                    ? NetworkImage(riderProfile!)
+                    : null,
+                backgroundColor: const Color(0xffffefef),
+                child: (riderProfile ?? '').isEmpty
+                    ? const Icon(Icons.person, size: 32, color: Colors.grey)
+                    : null,
+              ),
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: const Color(0xff22c55e),
+                  border: Border.all(color: Colors.white, width: 2),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.red, width: 2),
-                  ),
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundImage: (riderProfile ?? '').isNotEmpty
-                        ? NetworkImage(riderProfile!)
-                        : null,
-                    child: (riderProfile ?? '').isEmpty
-                        ? Icon(
-                            Icons.person,
-                            size: 40,
-                            color: Colors.grey.shade400,
-                          )
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        riderName ?? 'ไม่ระบุชื่อ',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          const Text(
-                            'ทะเบียนรถ: ',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            riderVehicleNumber ?? 'ไม่ระบุ',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          const Text(
-                            'เบอร์โทรศัพท์: ',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          SizedBox(
-                            width: 100,
-                            child: Text(
-                              riderPhone ?? 'ไม่ระบุเบอร์โทรศัพท์',
-                              style: const TextStyle(fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 80,
-                  height: 30,
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    onPressed: () =>
-                        Get.to(() => Riderprofile(rid: widget.rid)),
-                    child: const Text(
-                      'ข้อมูลไรเดอร์',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
+          title: Text(
+            riderName ?? 'ไม่ระบุชื่อ',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.badge_outlined, size: 14),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'ทะเบียน: ${riderVehicleNumber ?? '-'}',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  const Icon(Icons.phone_outlined, size: 14),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      riderPhone ?? 'ไม่ระบุเบอร์โทร',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          trailing: SizedBox(
+            width: 110,
+            height: 36,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                backgroundColor: const Color(0xffff3b30),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ],
+              ),
+              onPressed: () => Get.to(() => Riderprofile(rid: widget.rid)),
+              icon: const Icon(Icons.info_outline, size: 16),
+              label: const Text(
+                'ข้อมูลไรเดอร์',
+                style: TextStyle(fontSize: 12),
+              ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
 
-/// ---------------- แผนที่ (แสดงเฉพาะออเดอร์เดียวตาม oid) ----------------
+class _EmptyHint extends StatelessWidget {
+  final String text;
+  const _EmptyHint({required this.text});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xfffff7ed),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xffffedd5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xfffb923c)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text, style: const TextStyle(color: Color(0xff9a3412))),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ---------------- แผนที่ (FlutterMap ตัวเดียว) ----------------
 class MapReceive extends StatefulWidget {
   final String uid, rid, oid;
   const MapReceive({
@@ -346,14 +429,14 @@ class _MapReceiveState extends State<MapReceive> {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('orders')
-          .doc(widget.oid) // ✅ ออเดอร์เดียว
+          .doc(widget.oid)
           .snapshots(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         if (!snap.hasData || !snap.data!.exists) {
-          return const Center(child: Text('ไม่พบคำสั่งซื้อ'));
+          return const _EmptyHint(text: 'ไม่พบคำสั่งซื้อ');
         }
 
         final data = snap.data!.data()!;
@@ -364,7 +447,7 @@ class _MapReceiveState extends State<MapReceive> {
 
         final List<Marker> markers = [];
 
-        // ผู้รับของเรา
+        // ผู้รับ
         if (data['receiver_id'] == widget.uid &&
             data['receiver_latitude'] != null &&
             data['receiver_longitude'] != null) {
@@ -375,18 +458,18 @@ class _MapReceiveState extends State<MapReceive> {
           markers.add(
             Marker(
               point: receiverPos!,
-              width: 30,
-              height: 30,
+              width: 34,
+              height: 34,
               child: const Icon(
                 Icons.location_on,
                 color: Colors.blue,
-                size: 30,
+                size: 34,
               ),
             ),
           );
         }
 
-        // ไรเดอร์ของออเดอร์นี้
+        // ไรเดอร์
         if ((data['rider_id'] ?? '') == widget.rid &&
             data['rider_latitude'] != null &&
             data['rider_longitude'] != null) {
@@ -397,8 +480,8 @@ class _MapReceiveState extends State<MapReceive> {
           markers.add(
             Marker(
               point: riderPos!,
-              width: 30,
-              height: 30,
+              width: 34,
+              height: 34,
               child: const Icon(
                 Icons.directions_bike_sharp,
                 color: Colors.red,
@@ -409,43 +492,62 @@ class _MapReceiveState extends State<MapReceive> {
         }
 
         // กล้องเริ่มต้น
-        LatLng initialCenter =
+        final LatLng initialCenter =
             receiverPos ?? riderPos ?? const LatLng(15.870031, 100.992541);
-        double initialZoom = (receiverPos != null && riderPos != null)
+        final double initialZoom = (receiverPos != null && riderPos != null)
             ? 14
             : 13;
 
         return Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.blueGrey, width: 2),
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 5,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              height: 300,
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: initialCenter,
-                  initialZoom: initialZoom,
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.example.rider_app',
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            height: 320,
+            child: Stack(
+              children: [
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: initialCenter,
+                    initialZoom: initialZoom,
+                    // ใช้ interactionOptions (แทน interactiveFlags)
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag
+                          .all, // หรือ InteractiveFlag.none ถ้าจะล็อก
+                    ),
                   ),
-                  MarkerLayer(markers: markers),
-                ],
-              ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.rider_app',
+                    ),
+                    MarkerLayer(markers: markers),
+                  ],
+                ),
+
+                if (distanceToRider != null)
+                  Positioned(
+                    left: 12,
+                    top: 12,
+                    child: Chip(
+                      avatar: const Icon(Icons.route, size: 18),
+                      label: Text(
+                        distanceToRider! >= 1000
+                            ? '${(distanceToRider! / 1000).toStringAsFixed(2)} กม.'
+                            : '${distanceToRider!.toStringAsFixed(0)} ม.',
+                      ),
+                      backgroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      side: const BorderSide(color: Color(0xffe5e7eb)),
+                    ),
+                  ),
+              ],
             ),
           ),
         );
@@ -454,7 +556,7 @@ class _MapReceiveState extends State<MapReceive> {
   }
 }
 
-/// ---------------- รายละเอียดสินค้า (เพิ่มรูปตามสถานะถ้ามี) ----------------
+/// ---------------- รายละเอียดสินค้า (Cards + หลักฐานเป็น Tile) ----------------
 class ProductDetail extends StatefulWidget {
   final String oid, uid;
   const ProductDetail({super.key, required this.oid, required this.uid});
@@ -469,8 +571,8 @@ class _ProductDetailState extends State<ProductDetail> {
   String? senderAddress;
   String? senderPhone;
   String? status;
-  String? imagePickupUrl; // ✅ รูปตอนรับของ
-  String? imageDeliveredUrl; // ✅ รูปตอนส่งสำเร็จ
+  String? imagePickupUrl; // รูปตอนรับของ
+  String? imageDeliveredUrl; // รูปตอนส่งสำเร็จ
   bool _isLoading = true;
 
   @override
@@ -510,11 +612,8 @@ class _ProductDetailState extends State<ProductDetail> {
         senderName = userDoc.data()?['fullname'] ?? 'ไม่ระบุชื่อผู้ส่ง';
         senderPhone = userDoc.data()?['phone'] ?? 'ไม่ระบุเบอร์โทร';
         status = (orderData['status'] ?? 'ว่าง').toString();
-
-        // ✅ ดึง URL รูปจากออเดอร์
         imagePickupUrl = (orderData['image_pickup'] ?? '').toString();
         imageDeliveredUrl = (orderData['image_delivered'] ?? '').toString();
-
         _isLoading = false;
       });
     } catch (e) {
@@ -524,14 +623,12 @@ class _ProductDetailState extends State<ProductDetail> {
   }
 
   bool get _shouldShowPickup {
-    // แสดงรูปตอนรับของเมื่อสถานะถึงขั้นรับของแล้วขึ้นไป
     return (imagePickupUrl ?? '').isNotEmpty &&
         (status == 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)' ||
             status == 'ไรเดอร์นำส่งสินค้าแล้ว');
   }
 
   bool get _shouldShowDelivered {
-    // แสดงรูปส่งสำเร็จเฉพาะตอน "นำส่งแล้ว"
     return (imageDeliveredUrl ?? '').isNotEmpty &&
         status == 'ไรเดอร์นำส่งสินค้าแล้ว';
   }
@@ -539,10 +636,11 @@ class _ProductDetailState extends State<ProductDetail> {
   Widget _proofTile(String title, String url) {
     return Card(
       margin: const EdgeInsets.only(top: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 0,
       child: ListTile(
         leading: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Image.network(
             url,
             width: 56,
@@ -566,32 +664,40 @@ class _ProductDetailState extends State<ProductDetail> {
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (orderDetail.isEmpty) {
-      return const Center(child: Text('ไม่พบข้อมูลสินค้า'));
+      return const _EmptyHint(text: 'ไม่พบข้อมูลสินค้า');
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // รายการสินค้า
         ...orderDetail.map((item) {
           return Card(
-            margin: const EdgeInsets.symmetric(vertical: 0),
-            child: Row(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(5),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            elevation: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
                     child: Image.network(
                       item['imageUrl'] ?? '',
-                      width: 80,
-                      height: 80,
+                      width: 84,
+                      height: 84,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
-                          width: 80,
-                          height: 80,
-                          color: Colors.grey[300],
+                          width: 84,
+                          height: 84,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           child: const Icon(
                             Icons.image_not_supported,
                             color: Colors.grey,
@@ -600,80 +706,107 @@ class _ProductDetailState extends State<ProductDetail> {
                       },
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(3),
+                  const SizedBox(width: 12),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           (item['detail'] ?? 'ไม่ระบุรายละเอียด').toString(),
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          senderName ?? '-',
                           style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        SizedBox(
-                          width: 200,
-                          child: Text(
-                            senderAddress ?? '-',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.person_outline,
+                              size: 16,
                               color: Colors.blueGrey,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 2,
-                          ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                senderName ?? '-',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.blueGrey,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          senderPhone ?? '-',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey,
-                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.location_on_outlined,
+                              size: 16,
+                              color: Colors.blueGrey,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                senderAddress ?? '-',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.blueGrey,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.phone_outlined,
+                              size: 16,
+                              color: Colors.blueGrey,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              senderPhone ?? '-',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.blueGrey,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         }),
-
-        const SizedBox(height: 12),
-        const Divider(),
-        const SizedBox(height: 8),
-
-        // ✅ หลักฐานจากไรเดอร์ (แสดงตามสถานะ)
-        if (_shouldShowPickup || _shouldShowDelivered)
-          const Padding(
-            padding: EdgeInsets.only(left: 4.0, bottom: 6),
-            child: Text(
-              'หลักฐานจากไรเดอร์',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+        const SizedBox(height: 10),
+        if (_shouldShowPickup || _shouldShowDelivered) ...[
+          const Divider(),
+          const SizedBox(height: 6),
+          const Text(
+            'หลักฐานจากไรเดอร์',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-        if (_shouldShowPickup)
-          _proofTile('รูปตอนรับสินค้า (Pickup)', imagePickupUrl!),
-        if (_shouldShowDelivered)
-          _proofTile('รูปตอนส่งสำเร็จ (Delivered)', imageDeliveredUrl!),
+          if (_shouldShowPickup)
+            _proofTile('รูปตอนรับสินค้า (Pickup)', imagePickupUrl!),
+          if (_shouldShowDelivered)
+            _proofTile('รูปตอนส่งสำเร็จ (Delivered)', imageDeliveredUrl!),
+        ],
       ],
     );
   }
 }
 
-/// ---------------- ตัวติดตามสถานะ ----------------
+/// ---------------- ตัวติดตามสถานะ (เขียวเหมือนแบบแรก) ----------------
 class StatusTracker extends StatefulWidget {
   final String oid, uid, rid;
   const StatusTracker({
@@ -716,66 +849,88 @@ class _StatusTrackerState extends State<StatusTracker> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const CircularProgressIndicator();
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    // ลำดับสถานะ
+    final steps = <String>[
+      'รอไรเดอร์รับสินค้า',
+      'ไรเดอร์รับงานแล้ว (กำลังเดินทางไปรับสินค้า)',
+      'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)',
+      'ไรเดอร์นำส่งสินค้าแล้ว',
+    ];
+    int activeIndex = steps.indexWhere((s) => s == status);
+    if (activeIndex == -1) activeIndex = 0;
+
+    // สีตามแบบแรก
+    const activeGreen = Color(0xFF22C55E); // เขียวสด
+    final inactiveDotBg = Colors.white; // พื้นขาวสำหรับจุดที่ยังไม่ active
+    final inactiveIcon = Colors.grey.shade400;
+    final connectorActive = activeGreen;
+    final connectorInactive = Colors.white.withOpacity(.5);
+
+    final icons = const [
+      Icons.access_time_filled,
+      Icons.upload,
+      Icons.motorcycle,
+      Icons.check_circle,
+    ];
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildStatusIcon(
-          Icons.access_time_filled,
-          status == 'รอไรเดอร์รับสินค้า' ||
-              status == 'ไรเดอร์รับงานแล้ว (กำลังเดินทางไปรับสินค้า)' ||
-              status == 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)' ||
-              status == 'ไรเดอร์นำส่งสินค้าแล้ว',
-        ),
-        _buildConnector(status != 'รอไรเดอร์รับสินค้า'),
-        _buildStatusIcon(
-          Icons.upload,
-          status == 'ไรเดอร์รับงานแล้ว (กำลังเดินทางไปรับสินค้า)' ||
-              status == 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)' ||
-              status == 'ไรเดอร์นำส่งสินค้าแล้ว',
-        ),
-        _buildConnector(
-          status != 'รอไรเดอร์รับสินค้า' &&
-              status != 'ไรเดอร์รับงานแล้ว (กำลังเดินทางไปรับสินค้า)',
-        ),
-        _buildStatusIcon(
-          Icons.motorcycle,
-          status == 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)' ||
-              status == 'ไรเดอร์นำส่งสินค้าแล้ว',
-        ),
-        _buildConnector(status == 'ไรเดอร์นำส่งสินค้าแล้ว'),
-        _buildStatusIcon(
-          Icons.check_circle,
-          status == 'ไรเดอร์นำส่งสินค้าแล้ว',
-        ),
-      ],
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(icons.length * 2 - 1, (i) {
+        if (i.isOdd) {
+          // เส้นเชื่อม
+          final leftStep = i ~/ 2;
+          final isActiveConnector = leftStep < activeIndex;
+          return Expanded(
+            child: Container(
+              height: 8, // สูงขึ้นนิดให้ดูชัด
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: BoxDecoration(
+                color: isActiveConnector ? connectorActive : connectorInactive,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          );
+        }
+        // จุดสถานะ
+        final idx = i ~/ 2;
+        final isActive = idx <= activeIndex;
+        return _buildStatusIcon(
+          icons[idx],
+          isActive: isActive,
+          activeGreen: activeGreen,
+          inactiveDotBg: inactiveDotBg,
+          inactiveIcon: inactiveIcon,
+        );
+      }),
     );
   }
 
-  Widget _buildStatusIcon(IconData icon, bool isActive) {
+  Widget _buildStatusIcon(
+    IconData icon, {
+    required bool isActive,
+    required Color activeGreen,
+    required Color inactiveDotBg,
+    required Color inactiveIcon,
+  }) {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: isActive ? Colors.green.shade400 : Colors.white,
+        color: isActive ? activeGreen : inactiveDotBg,
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 2),
       ),
       child: Icon(
         icon,
-        color: isActive ? Colors.white : Colors.grey.shade400,
-        size: 24,
+        color: isActive ? Colors.white : inactiveIcon,
+        size: 22,
       ),
-    );
-  }
-
-  Widget _buildConnector(bool isActive) {
-    return Container(
-      width: 40,
-      height: 10,
-      color: isActive
-          ? Colors.green.shade400
-          : Colors.grey[300]?.withOpacity(0.5),
     );
   }
 
@@ -797,14 +952,14 @@ class _StatusTrackerState extends State<StatusTracker> {
         actionsAlignment: MainAxisAlignment.center,
         actions: [
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: Color(0xffff3b30)),
+            onPressed: () async {
+              Get.to(() => ReceivedTab(uid: widget.uid, rid: widget.rid));
+            },
             child: const Text(
               'ได้รับแล้ว',
               style: TextStyle(color: Colors.white),
             ),
-            onPressed: () async {
-              Get.to(() => ReceivedTab(uid: widget.uid, rid: widget.rid));
-            },
           ),
         ],
       ),

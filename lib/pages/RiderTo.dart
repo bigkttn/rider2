@@ -13,25 +13,19 @@ import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 
-/// ----------------------------------------------------------------
-/// Helpers: ดึงพิกัดจาก order ให้ยืดหยุ่นและกันผิดพลาด
-/// ----------------------------------------------------------------
-
+/// ----------------------------- Helpers -----------------------------
 double? _toD(dynamic v) {
   if (v == null) return null;
   if (v is num) return v.toDouble();
   if (v is String) return double.tryParse(v.trim());
-  // ถ้าเป็น GeoPoint แต่ถูกยัดมาในช่องเดียว (ผิดรูปแบบ) → ไม่ใช้
   if (v is GeoPoint) return null;
   return null;
 }
 
-/// คืนค่า LatLng จากหลายชื่อ key / หลาย type / รองรับ GeoPoint
 LatLng? _latLngFromOrderFlexible(
   Map<String, dynamic> m, {
   required bool isSender,
 }) {
-  // key หลายรูปแบบที่พบได้บ่อย
   final latKeys = isSender
       ? ['sender_latitude', 'sender_lat', 's_lat', 'from_lat']
       : ['receiver_latitude', 'receiver_lat', 'r_lat', 'to_lat'];
@@ -51,22 +45,16 @@ LatLng? _latLngFromOrderFlexible(
           'to_lng',
           'receiver_long',
         ];
-
-  // กรณีเก็บเป็น GeoPoint (ปกติควรเป็นคนละ field เช่น sender_geo / receiver_geo)
   final geoPointKeys = isSender
       ? ['sender_geo', 'sender_geopoint', 'from_geo']
       : ['receiver_geo', 'receiver_geopoint', 'to_geo'];
 
   for (final k in geoPointKeys) {
     final v = m[k];
-    if (v is GeoPoint) {
-      return LatLng(v.latitude, v.longitude);
-    }
+    if (v is GeoPoint) return LatLng(v.latitude, v.longitude);
   }
 
-  double? lat;
-  double? lng;
-
+  double? lat, lng;
   for (final k in latKeys) {
     if (m.containsKey(k)) {
       lat = _toD(m[k]);
@@ -80,7 +68,6 @@ LatLng? _latLngFromOrderFlexible(
     }
   }
 
-  // ถ้าค่าเลยช่วง ให้ลองสลับ (กัน dev ใส่สลับช่อง)
   if (lat != null && (lat.abs() > 90) && lng != null && (lng.abs() <= 90)) {
     final tmp = lat;
     lat = lng;
@@ -91,12 +78,10 @@ LatLng? _latLngFromOrderFlexible(
     lat = lng;
     lng = tmp;
   }
-
   if (lat == null || lng == null) return null;
   return LatLng(lat, lng);
 }
 
-/// Haversine ระยะทาง (เมตร)
 double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
   const R = 6371000.0;
   final dLat = (lat2 - lat1) * (pi / 180.0);
@@ -111,10 +96,7 @@ double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
   return R * c;
 }
 
-/// ----------------------------------------------------------------
-/// หน้าจัดการงานที่รับแล้ว (Ridertopage)
-/// ----------------------------------------------------------------
-
+/// --------------------------- Ridertopage ---------------------------
 class Ridertopage extends StatefulWidget {
   final String uid;
   const Ridertopage({super.key, required this.uid});
@@ -127,6 +109,10 @@ class _RidertopageState extends State<Ridertopage> {
   // Cloudinary
   static const _cloudName = "dywfdy174";
   static const _uploadPreset = "flutter_upload";
+
+  // Thunderforest tiles
+  static const _tfUrl =
+      'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=d7b6821f750e49e2864ef759ef2223ec';
 
   // รูป
   File? pickupImage;
@@ -141,14 +127,13 @@ class _RidertopageState extends State<Ridertopage> {
   LatLng? pickupPos; // sender
   LatLng? receiverPos; // receiver
 
-  // ออเดอร์ปัจจุบัน
+  // งานปัจจุบัน
   Map<String, dynamic>? currentOrder;
   bool _isFinished = false;
 
   final MapController _mapController = MapController();
   StreamSubscription<Position>? _posSub;
 
-  // ---------- Safe setState ----------
   void safeSetState(VoidCallback fn) {
     if (!mounted) return;
     final phase = SchedulerBinding.instance.schedulerPhase;
@@ -156,17 +141,14 @@ class _RidertopageState extends State<Ridertopage> {
       setState(fn);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(fn);
+        if (mounted) setState(fn);
       });
     }
   }
 
   void _afterBuild(VoidCallback fn) {
-    if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      fn();
+      if (mounted) fn();
     });
   }
 
@@ -182,13 +164,53 @@ class _RidertopageState extends State<Ridertopage> {
     super.dispose();
   }
 
-  // ---------- Location stream ----------
+  // ---------------------- Fit camera helpers ----------------------
+  void _fitToPoints(
+    List<LatLng> points, {
+    double padding = 36,
+    double maxZoom = 18,
+    double? fallbackZoom,
+  }) {
+    if (!mounted || points.isEmpty) return;
+    if (points.length == 1) {
+      _mapController.move(points.first, fallbackZoom ?? 16);
+      return;
+    }
+    final bounds = LatLngBounds.fromPoints(points);
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: EdgeInsets.all(padding),
+        maxZoom: maxZoom,
+      ),
+    );
+  }
+
+  void _refitMapByStatus() {
+    final status = (currentOrder?['status'] ?? '').toString();
+    if (status.contains('ไปรับสินค้า')) {
+      _fitToPoints([
+        if (riderPos != null) riderPos!,
+        if (pickupPos != null) pickupPos!,
+      ], fallbackZoom: 16);
+    } else if (status.contains('ไปส่ง') || status.contains('นำส่ง')) {
+      _fitToPoints([
+        if (riderPos != null) riderPos!,
+        if (receiverPos != null) receiverPos!,
+      ], fallbackZoom: 16);
+    } else if (riderPos != null) {
+      _fitToPoints([riderPos!], fallbackZoom: 15);
+    } else {
+      _mapController.move(const LatLng(15.870031, 100.992541), 14);
+    }
+  }
+
+  // -------------------------- Location stream --------------------------
   Future<void> _ensureLocationPermissionAndStream() async {
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
+      if (!await Geolocator.isLocationServiceEnabled()) return;
 
-      LocationPermission permission = await Geolocator.checkPermission();
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) return;
@@ -196,7 +218,6 @@ class _RidertopageState extends State<Ridertopage> {
       if (permission == LocationPermission.deniedForever) return;
 
       await _posSub?.cancel();
-
       _posSub =
           Geolocator.getPositionStream(
             locationSettings: const LocationSettings(
@@ -225,10 +246,7 @@ class _RidertopageState extends State<Ridertopage> {
 
             if (!_isFinished && currentOrder != null) {
               safeSetState(() {});
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted && riderPos != null)
-                  _mapController.move(riderPos!, 16);
-              });
+              _afterBuild(_refitMapByStatus);
 
               if ((currentOrder!['status'] ?? '') != 'ไรเดอร์นำส่งสินค้าแล้ว') {
                 await _pushRiderLocationToFirestore(
@@ -269,7 +287,7 @@ class _RidertopageState extends State<Ridertopage> {
     }
   }
 
-  // ---------- Cloudinary ----------
+  // ----------------------------- Upload -----------------------------
   Future<String?> _uploadToCloudinary(File image) async {
     try {
       final url = Uri.parse(
@@ -314,20 +332,15 @@ class _RidertopageState extends State<Ridertopage> {
             'image_pickup': url,
             'status': 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)',
           });
-
       safeSetState(() {
         pickupImage = file;
         currentOrder?['status'] = 'ไรเดอร์รับสินค้าแล้ว (กำลังเดินทางไปส่ง)';
         currentOrder?['image_pickup'] = url;
       });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ รับสินค้าเรียบร้อย กำลังเดินทางไปส่ง'),
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ รับสินค้าเรียบร้อย กำลังไปส่ง')),
+      );
+      _afterBuild(_refitMapByStatus);
     } else {
       await FirebaseFirestore.instance
           .collection('orders')
@@ -337,7 +350,6 @@ class _RidertopageState extends State<Ridertopage> {
             'status': 'ไรเดอร์นำส่งสินค้าแล้ว',
             'delivered_at': FieldValue.serverTimestamp(),
           });
-
       _isFinished = true;
 
       await FirebaseFirestore.instance
@@ -356,27 +368,18 @@ class _RidertopageState extends State<Ridertopage> {
         pickupPos = null;
         receiverPos = null;
       });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ ส่งสินค้าเรียบร้อยแล้ว 🎉')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ ส่งสินค้าเรียบร้อยแล้ว 🎉')),
+      );
+      _afterBuild(_refitMapByStatus);
     }
   }
 
-  // ---------- ใช้พิกัดจาก order “โดยตรง” ----------
+  // ------------------------- Order handling -------------------------
   Future<void> _fetchAddresses(Map<String, dynamic> order) async {
     try {
       pickupPos = _latLngFromOrderFlexible(order, isSender: true);
       receiverPos = _latLngFromOrderFlexible(order, isSender: false);
-
-      if (pickupPos == null || receiverPos == null) {
-        log(
-          '⚠️ Missing coords. sender=(${order['sender_latitude']}, ${order['sender_longitude']} | ${order['sender_longtitude']}) '
-          'receiver=(${order['receiver_latitude']}, ${order['receiver_longitude']})',
-        );
-      }
 
       if (riderPos != null) {
         distanceToPickup = (pickupPos == null)
@@ -398,13 +401,11 @@ class _RidertopageState extends State<Ridertopage> {
       }
 
       safeSetState(() {});
-      log("📍 pickup(sender): $pickupPos | receiver: $receiverPos");
     } catch (e) {
       log('❌ _fetchAddresses error: $e');
     }
   }
 
-  // ---------- Order transitions ----------
   Future<void> _onNewActiveOrder(Map<String, dynamic> ord) async {
     currentOrder = ord;
     _isFinished = false;
@@ -435,10 +436,7 @@ class _RidertopageState extends State<Ridertopage> {
             );
 
       await _pushRiderLocationToFirestore(pos.latitude, pos.longitude);
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && riderPos != null) _mapController.move(riderPos!, 16);
-      });
+      _afterBuild(_refitMapByStatus);
     } catch (e) {
       log('getCurrentPosition error: $e');
     }
@@ -451,9 +449,8 @@ class _RidertopageState extends State<Ridertopage> {
         pickupPos == null &&
         receiverPos == null &&
         distanceToPickup == null &&
-        distanceToReceiver == null) {
+        distanceToReceiver == null)
       return;
-    }
 
     currentOrder = null;
     pickupPos = null;
@@ -461,9 +458,10 @@ class _RidertopageState extends State<Ridertopage> {
     distanceToPickup = null;
     distanceToReceiver = null;
     safeSetState(() {});
+    _afterBuild(_refitMapByStatus);
   }
 
-  // ---------- Bottom Sheet ----------
+  // -------------------------- Bottom Sheet --------------------------
   void _openJobSheet() {
     if (currentOrder == null) {
       ScaffoldMessenger.of(
@@ -481,215 +479,198 @@ class _RidertopageState extends State<Ridertopage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
+        final status = (currentOrder?['status'] ?? '').toString();
+        final canPickup = (distanceToPickup ?? double.infinity) <= 20;
+        final canDeliver = (distanceToReceiver ?? double.infinity) <= 20;
+
         return DraggableScrollableSheet(
           initialChildSize: 0.35,
           minChildSize: 0.25,
           maxChildSize: 0.9,
           expand: false,
-          builder: (context, scrollController) {
-            final status = (currentOrder?['status'] ?? '').toString();
-            final canPickup = (distanceToPickup ?? double.infinity) <= 20;
-            final canDeliver = (distanceToReceiver ?? double.infinity) <= 20;
-
-            return SingleChildScrollView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 5,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
+          builder: (_, controller) => SingleChildScrollView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
+                ),
+                Text(
+                  'รายละเอียดงาน',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text('สถานะ: $status'),
+                if (distanceToPickup != null)
                   Text(
-                    'รายละเอียดงาน',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
+                    "ระยะจากจุดรับสินค้า: ${distanceToPickup!.toStringAsFixed(1)} ม.",
+                    style: TextStyle(
+                      color: canPickup ? Colors.green : Colors.red,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text('สถานะ: $status'),
-                  if (distanceToPickup != null)
-                    Text(
-                      "ระยะจากจุดรับสินค้า: ${distanceToPickup!.toStringAsFixed(1)} ม.",
-                      style: TextStyle(
-                        color: canPickup ? Colors.green : Colors.red,
-                      ),
-                    ),
-                  if (distanceToReceiver != null)
-                    Text(
-                      "ระยะจากจุดส่งสินค้า: ${distanceToReceiver!.toStringAsFixed(1)} ม.",
-                      style: TextStyle(
-                        color: canDeliver ? Colors.green : Colors.red,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-
-                  // Pickup photo
-                  ElevatedButton.icon(
-                    onPressed: status.contains('ไปรับสินค้า') && canPickup
-                        ? () async {
-                            Navigator.of(context).pop();
-                            await _captureAndUploadImage(true);
-                          }
-                        : null,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text("ถ่ายรูป รับสินค้า"),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      backgroundColor: canPickup
-                          ? const Color(0xFFFF3B30)
-                          : Colors.grey,
+                if (distanceToReceiver != null)
+                  Text(
+                    "ระยะจากจุดส่งสินค้า: ${distanceToReceiver!.toStringAsFixed(1)} ม.",
+                    style: TextStyle(
+                      color: canDeliver ? Colors.green : Colors.red,
                     ),
                   ),
-                  if (pickupImage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Image.file(
-                        pickupImage!,
-                        height: 150,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  const SizedBox(height: 10),
-
-                  // Delivered photo
-                  ElevatedButton.icon(
-                    onPressed: status.contains('ไปส่ง') && canDeliver
-                        ? () async {
-                            Navigator.of(context).pop();
-                            await _captureAndUploadImage(false);
-                          }
-                        : null,
-                    icon: const Icon(Icons.camera),
-                    label: const Text("ถ่ายรูป ส่งสินค้า"),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      backgroundColor: canDeliver ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                  if (deliveredImage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Image.file(
-                        deliveredImage!,
-                        height: 150,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-
-                  // Cancel
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final confirmCancel = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('ยืนยันการยกเลิกการส่ง'),
-                          content: const Text(
-                            'คุณต้องการยกเลิกการส่งสินค้านี้ใช่หรือไม่?',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('ไม่'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('ใช่'),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (confirmCancel == true && currentOrder != null) {
-                        try {
-                          final orderId = currentOrder!['order_id'];
-
-                          await FirebaseFirestore.instance
-                              .collection('orders')
-                              .doc(orderId)
-                              .update({
-                                'status': 'รอไรเดอร์รับสินค้า',
-                                'rider_id': '',
-                                'rider_latitude': FieldValue.delete(),
-                                'rider_longitude': FieldValue.delete(),
-                                'rider_last_update':
-                                    FieldValue.serverTimestamp(),
-                                'canceled_at': FieldValue.serverTimestamp(),
-                                'image_pickup': FieldValue.delete(),
-                                'image_delivered': FieldValue.delete(),
-                              });
-
-                          await FirebaseFirestore.instance
-                              .collection('riders')
-                              .doc(widget.uid)
-                              .update({
-                                'latitude': FieldValue.delete(),
-                                'longitude': FieldValue.delete(),
-                                'last_update': FieldValue.serverTimestamp(),
-                              });
-
-                          safeSetState(() {
-                            pickupImage = null;
-                            deliveredImage = null;
-                          });
-
-                          Navigator.of(context).pop();
-                          _afterBuild(_onNoOrder);
-
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  '🚫 ยกเลิกการส่งสำเร็จ — งานกลับไปรอรับใหม่',
-                                ),
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          log('❌ Error cancel delivery: $e');
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('เกิดข้อผิดพลาดในการยกเลิก'),
-                              ),
-                            );
-                          }
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: status.contains('ไปรับสินค้า') && canPickup
+                      ? () async {
+                          Navigator.pop(context);
+                          await _captureAndUploadImage(true);
                         }
-                      }
-                    },
-                    icon: const Icon(Icons.cancel),
-                    label: const Text("ยกเลิกการส่งสินค้า"),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      backgroundColor: const Color.fromARGB(255, 255, 0, 0),
+                      : null,
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text("ถ่ายรูป รับสินค้า"),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    backgroundColor: canPickup
+                        ? const Color(0xFFFF3B30)
+                        : Colors.grey,
+                  ),
+                ),
+                if (pickupImage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Image.file(
+                      pickupImage!,
+                      height: 150,
+                      fit: BoxFit.cover,
                     ),
                   ),
-                ],
-              ),
-            );
-          },
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  onPressed: status.contains('ไปส่ง') && canDeliver
+                      ? () async {
+                          Navigator.pop(context);
+                          await _captureAndUploadImage(false);
+                        }
+                      : null,
+                  icon: const Icon(Icons.camera),
+                  label: const Text("ถ่ายรูป ส่งสินค้า"),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    backgroundColor: canDeliver ? Colors.green : Colors.grey,
+                  ),
+                ),
+                if (deliveredImage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Image.file(
+                      deliveredImage!,
+                      height: 150,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('ยืนยันการยกเลิกการส่ง'),
+                        content: const Text(
+                          'คุณต้องการยกเลิกการส่งสินค้านี้ใช่หรือไม่?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('ไม่'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('ใช่'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true && currentOrder != null) {
+                      try {
+                        final orderId = currentOrder!['order_id'];
+                        await FirebaseFirestore.instance
+                            .collection('orders')
+                            .doc(orderId)
+                            .update({
+                              'status': 'รอไรเดอร์รับสินค้า',
+                              'rider_id': '',
+                              'rider_latitude': FieldValue.delete(),
+                              'rider_longitude': FieldValue.delete(),
+                              'rider_last_update': FieldValue.serverTimestamp(),
+                              'canceled_at': FieldValue.serverTimestamp(),
+                              'image_pickup': FieldValue.delete(),
+                              'image_delivered': FieldValue.delete(),
+                            });
+                        await FirebaseFirestore.instance
+                            .collection('riders')
+                            .doc(widget.uid)
+                            .update({
+                              'latitude': FieldValue.delete(),
+                              'longitude': FieldValue.delete(),
+                              'last_update': FieldValue.serverTimestamp(),
+                            });
+                        safeSetState(() {
+                          pickupImage = null;
+                          deliveredImage = null;
+                        });
+                        Navigator.pop(context);
+                        _afterBuild(_onNoOrder);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              '🚫 ยกเลิกการส่งสำเร็จ — งานกลับไปรอรับใหม่',
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('เกิดข้อผิดพลาดในการยกเลิก'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.cancel),
+                  label: const Text("ยกเลิกการส่งสินค้า"),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    backgroundColor: const Color.fromARGB(255, 255, 0, 0),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
-  // ---------- UI ----------
+  // ------------------------------ UI ------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true, // ให้แผนที่อยู่ใต้ AppBar -> เต็มจอจริง ๆ
       appBar: AppBar(
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: false, // << ปิดลูกศรย้อนกลับ
+
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: const Text("จัดการการส่งสินค้า"),
-        backgroundColor: const Color(0xFFFF3B30),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -708,7 +689,6 @@ class _RidertopageState extends State<Ridertopage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // ไม่มีงาน
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             if (currentOrder != null ||
                 pickupPos != null ||
@@ -718,77 +698,60 @@ class _RidertopageState extends State<Ridertopage> {
               _afterBuild(_onNoOrder);
             }
 
+            // ===== แผนที่เต็มจอ (ไม่มีงาน) =====
             return Stack(
               children: [
-                Column(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.red, width: 2),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: FlutterMap(
-                          mapController: _mapController,
-                          options: MapOptions(
-                            initialCenter:
-                                riderPos ?? const LatLng(15.870031, 100.992541),
-                            initialZoom: 14,
-                          ),
-                          children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'com.example.rider_app',
-                            ),
-                            if (riderPos != null)
-                              MarkerLayer(
-                                markers: [
-                                  Marker(
-                                    point: riderPos!,
-                                    width: 60,
-                                    height: 60,
-                                    child: const Icon(
-                                      Icons.pedal_bike,
-                                      color: Colors.red,
-                                      size: 40,
-                                    ),
-                                  ),
-                                ],
+                Positioned.fill(
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter:
+                          riderPos ?? const LatLng(15.870031, 100.992541),
+                      initialZoom: 14,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: _tfUrl,
+                        userAgentPackageName: 'com.example.rider_app',
+                        maxNativeZoom: 22,
+                      ),
+                      if (riderPos != null)
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: riderPos!,
+                              width: 60,
+                              height: 60,
+                              child: const Icon(
+                                Icons.pedal_bike,
+                                color: Colors.red,
+                                size: 40,
                               ),
+                            ),
                           ],
                         ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Positioned.fill(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: FloatingActionButton.extended(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('ยังไม่มีงานที่ต้องจัดส่ง'),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.info_outline),
-                        label: const Text('รายละเอียดงาน'),
-                        backgroundColor: Colors.grey,
-                      ),
+                // ปุ่มลอย
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 24 + MediaQuery.of(context).padding.bottom,
+                  child: FloatingActionButton.extended(
+                    onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('ยังไม่มีงานที่ต้องจัดส่ง')),
                     ),
+                    icon: const Icon(Icons.info_outline),
+                    label: const Text('รายละเอียดงาน'),
+                    backgroundColor: Colors.grey,
                   ),
                 ),
               ],
             );
           }
 
-          // มีงาน → ใช้เอกสารแรกเป็น current job (และยัด order_id ให้แน่ใจ)
+          // ===== มีงาน =====
           final firstDoc = snapshot.data!.docs.first;
           final data = {
             ...(firstDoc.data() as Map<String, dynamic>),
@@ -806,88 +769,93 @@ class _RidertopageState extends State<Ridertopage> {
 
           return Stack(
             children: [
-              Column(
-                children: [
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.red, width: 2),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter:
-                              pickupPos ??
-                              riderPos ??
-                              const LatLng(15.870031, 100.992541),
-                          initialZoom: 14,
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.example.rider_app',
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              if (pickupPos != null)
-                                Marker(
-                                  point: pickupPos!,
-                                  width: 60,
-                                  height: 60,
-                                  child: const Icon(
-                                    Icons.store,
-                                    color: Colors.green,
-                                    size: 40,
-                                  ),
-                                ),
-                              if (receiverPos != null)
-                                Marker(
-                                  point: receiverPos!,
-                                  width: 60,
-                                  height: 60,
-                                  child: const Icon(
-                                    Icons.location_on,
-                                    color: Colors.blue,
-                                    size: 40,
-                                  ),
-                                ),
-                              if (riderPos != null &&
-                                  currentOrder != null &&
-                                  !_isFinished)
-                                Marker(
-                                  point: riderPos!,
-                                  width: 60,
-                                  height: 60,
-                                  child: const Icon(
-                                    Icons.pedal_bike,
-                                    color: Colors.red,
-                                    size: 40,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              // แผนที่ “เต็มจอ”
               Positioned.fill(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: FloatingActionButton.extended(
-                      onPressed: _openJobSheet,
-                      icon: const Icon(Icons.tune),
-                      label: Text(status.isEmpty ? 'รายละเอียดงาน' : status),
-                      backgroundColor: const Color(0xFFFF3B30),
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter:
+                        pickupPos ??
+                        riderPos ??
+                        const LatLng(15.870031, 100.992541),
+                    initialZoom: 14,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: _tfUrl,
+                      userAgentPackageName: 'com.example.rider_app',
+                      maxNativeZoom: 22,
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        if (pickupPos != null)
+                          Marker(
+                            point: pickupPos!,
+                            width: 60,
+                            height: 60,
+                            child: const Icon(
+                              Icons.store,
+                              color: Colors.green,
+                              size: 40,
+                            ),
+                          ),
+                        if (receiverPos != null)
+                          Marker(
+                            point: receiverPos!,
+                            width: 60,
+                            height: 60,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.blue,
+                              size: 40,
+                            ),
+                          ),
+                        if (riderPos != null && !_isFinished)
+                          Marker(
+                            point: riderPos!,
+                            width: 60,
+                            height: 60,
+                            child: const Icon(
+                              Icons.pedal_bike,
+                              color: Colors.red,
+                              size: 40,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Gradient บังด้านบนให้อ่านข้อความบน AppBar ชัด
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: IgnorePointer(
+                  child: Container(
+                    height: kToolbarHeight + MediaQuery.of(context).padding.top,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.black38, Colors.transparent],
+                      ),
                     ),
                   ),
+                ),
+              ),
+
+              // ปุ่มลอยด้านล่าง
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 24 + MediaQuery.of(context).padding.bottom,
+                child: FloatingActionButton.extended(
+                  onPressed: _openJobSheet,
+                  icon: const Icon(Icons.tune),
+                  label: Text(status.isEmpty ? 'รายละเอียดงาน' : status),
+                  backgroundColor: const Color(0xFFFF3B30),
                 ),
               ),
             ],
@@ -897,7 +865,7 @@ class _RidertopageState extends State<Ridertopage> {
     );
   }
 
-  /// แผนที่พรีวิวก่อนรับงาน (ใช้พิกัดจาก order ผ่าน helper เดียวกัน)
+  /// พรีวิวก่อนรับงาน (ยังคงใช้ tiles เดียวกัน)
   Future<void> _showPreviewMap(
     BuildContext context,
     String orderId,
@@ -942,9 +910,8 @@ class _RidertopageState extends State<Ridertopage> {
     try {
       if (await Geolocator.isLocationServiceEnabled()) {
         var perm = await Geolocator.checkPermission();
-        if (perm == LocationPermission.denied) {
+        if (perm == LocationPermission.denied)
           perm = await Geolocator.requestPermission();
-        }
         if (perm != LocationPermission.denied &&
             perm != LocationPermission.deniedForever) {
           myPos = await Geolocator.getCurrentPosition(
@@ -977,7 +944,7 @@ class _RidertopageState extends State<Ridertopage> {
         ];
 
         final map = SizedBox(
-          height: 300,
+          height: 320,
           child: FlutterMap(
             mapController: mapController,
             options: MapOptions(
@@ -985,25 +952,21 @@ class _RidertopageState extends State<Ridertopage> {
               initialZoom: 14,
               onMapReady: () {
                 if (points.length >= 2) {
-                  final fit = CameraFit.bounds(
-                    bounds: LatLngBounds.fromPoints(points),
-                    padding: const EdgeInsets.all(40),
-                    maxZoom: 17,
+                  mapController.fitCamera(
+                    CameraFit.bounds(
+                      bounds: LatLngBounds.fromPoints(points),
+                      padding: const EdgeInsets.all(40),
+                      maxZoom: 17,
+                    ),
                   );
-                  mapController.fitCamera(fit);
                 }
               },
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: _tfUrl,
                 userAgentPackageName: 'com.example.rider_app',
-                maxNativeZoom: 18,
-              ),
-              PolylineLayer(
-                polylines: [
-                  Polyline(points: [s, r], strokeWidth: 4),
-                ],
+                maxNativeZoom: 22,
               ),
               MarkerLayer(
                 markers: [
@@ -1120,10 +1083,9 @@ class _RidertopageState extends State<Ridertopage> {
     );
   }
 
-  // ---------- รับงาน ----------
+  // ------------------------------ Accept ------------------------------
   Future<void> _acceptJob(String orderId) async {
     try {
-      // ห้ามมีงานค้าง
       final myOrders = await FirebaseFirestore.instance
           .collection('orders')
           .where('rider_id', isEqualTo: widget.uid)
@@ -1142,7 +1104,6 @@ class _RidertopageState extends State<Ridertopage> {
         return;
       }
 
-      // ขอสิทธิ์ตำแหน่ง
       if (!await Geolocator.isLocationServiceEnabled()) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1165,7 +1126,6 @@ class _RidertopageState extends State<Ridertopage> {
         desiredAccuracy: LocationAccuracy.best,
       );
 
-      // อัปเดตออเดอร์
       await FirebaseFirestore.instance
           .collection('orders')
           .doc(orderId)
@@ -1181,7 +1141,7 @@ class _RidertopageState extends State<Ridertopage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('รับงานสำเร็จ ✅')));
-      // (ให้หน้าที่ต้องไปส่งเปิดจากภายนอกเองตามโฟลว์คุณ)
+      _afterBuild(_refitMapByStatus);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

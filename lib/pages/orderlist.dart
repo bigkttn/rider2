@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -28,10 +27,14 @@ class OrderlistPage extends StatefulWidget {
 
 class _OrderlistPageState extends State<OrderlistPage> {
   int _selectedIndex = 0;
-  File? _imageFile;
+  File? _imageFile; // (reserved)
   final ImagePicker _picker = ImagePicker();
 
   late List<Widget> _pages;
+
+  // THEME
+  static const Color kPrimary = Color(0xFFFF3B30);
+  static const BorderRadius kRadius = BorderRadius.all(Radius.circular(18));
 
   @override
   void initState() {
@@ -40,56 +43,63 @@ class _OrderlistPageState extends State<OrderlistPage> {
       InTransitTab(uid: widget.uid, rid: widget.rid, oid: widget.oid),
       MapReceive(uid: widget.uid, rid: widget.rid),
       ReceivedTab(uid: widget.uid, rid: widget.rid),
-      SentTab(uid: widget.uid), // ✅ แท็บใหม่: สินค้าที่ส่ง
+      SentTab(uid: widget.uid),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false, // << ปิดลูกศรย้อนกลับ
+
+        backgroundColor: kPrimary,
+        elevation: 0,
+        title: const Text(
+          'รายการสินค้าของคุณ',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
       body: Stack(
         children: [
-          Container(color: const Color(0xFFFF3B30)),
+          Container(color: kPrimary),
           Positioned(
-            top: 150,
+            top: 100,
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
               decoration: const BoxDecoration(
-                color: Color(0xFFF5F5F5),
+                color: Color(0xFFF6F7F9),
                 borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(30),
-                  topRight: Radius.circular(30),
+                  topLeft: Radius.circular(28),
+                  topRight: Radius.circular(28),
                 ),
               ),
               child: Column(
                 children: [
-                  Container(
-                    height: 70,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
+                  const SizedBox(height: 10),
+                  _TabsBar(
+                    index: _selectedIndex,
+                    onChanged: (i) => setState(() => _selectedIndex = i),
+                    items: const [
+                      _TabItem(
+                        'สินค้ากำลังมาส่ง',
+                        Icons.local_shipping_outlined,
                       ),
-                    ),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 8),
-                          _tabButton('สินค้ากำลังมาส่ง', 0),
-                          _tabButton('ไรเดอร์ทั้งหมด', 1),
-                          _tabButton('สินค้าที่เคยได้รับ', 2),
-                          const SizedBox(width: 8),
-                        ],
+                      _TabItem('ไรเดอร์ทั้งหมด', Icons.map_outlined),
+                      _TabItem(
+                        'สินค้าที่เคยได้รับ',
+                        Icons.inventory_2_outlined,
                       ),
-                    ),
+                      // _TabItem('ที่คุณส่ง', Icons.outbox_outlined),
+                    ],
                   ),
+                  const SizedBox(height: 8),
                   Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 0),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
                       child: _pages[_selectedIndex],
                     ),
                   ),
@@ -97,59 +107,13 @@ class _OrderlistPageState extends State<OrderlistPage> {
               ),
             ),
           ),
-          SafeArea(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: const [
-                Padding(
-                  padding: EdgeInsets.only(top: 70, left: 80),
-                  child: Text(
-                    "รายการสินค้าของคุณ",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _tabButton(String label, int idx) {
-    final selected = _selectedIndex == idx;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: TextButton(
-        onPressed: () => setState(() => _selectedIndex = idx),
-        style: ButtonStyle(
-          side: const WidgetStatePropertyAll(
-            BorderSide(color: Color(0xffff3b30), width: 2),
-          ),
-          foregroundColor: MaterialStateProperty.resolveWith<Color?>(
-            (states) => selected ? const Color(0xffff3b30) : Colors.grey,
-          ),
-          backgroundColor: MaterialStateProperty.resolveWith<Color?>(
-            (states) => Colors.white,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? const Color(0xffff3b30) : Colors.grey,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
       ),
     );
   }
 }
 
-//-----------------------------------------------------------
+/// ---------------------------- Product List Card ----------------------------
 class ProductHistoryCard extends StatelessWidget {
   final String imageUrl;
   final String productDetial;
@@ -180,101 +144,117 @@ class ProductHistoryCard extends StatelessWidget {
     required this.oid,
   });
 
+  Color get statusColor => status.contains('แล้ว')
+      ? Colors.green
+      : (status.contains('รอ') ? const Color(0xFFFFA000) : Colors.blueGrey);
+
   @override
   Widget build(BuildContext context) {
-    final isDelivered = status == 'ไรเดอร์นำส่งสินค้าแล้ว';
-    final buttonLabel = isDelivered ? 'รายละเอียด' : 'รายละเอียด';
-
     return Card(
-      elevation: 0.5,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+      elevation: 0.8,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: _OrderlistPageState.kRadius),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(14.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: BorderRadius.circular(10.0),
                   child: Image.network(
                     imageUrl,
-                    width: 60,
-                    height: 60,
+                    width: 64,
+                    height: 64,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 60,
-                        height: 60,
-                        color: Colors.grey[200],
-                        child: const Icon(
-                          Icons.image_not_supported,
-                          color: Colors.grey,
-                        ),
-                      );
-                    },
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 64,
+                      height: 64,
+                      color: Colors.grey[200],
+                      child: const Icon(
+                        Icons.image_not_supported,
+                        color: Colors.grey,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 16.0),
+                const SizedBox(width: 12.0),
                 Expanded(
-                  child: Text(
-                    productDetial,
-                    style: const TextStyle(
-                      fontSize: 16.0,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        productDetial,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16.0,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.circle, size: 8, color: statusColor),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'สถานะ: $status',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: statusColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12.0),
-            const Divider(),
-            Text(
-              "ผู้ส่ง: $senderName",
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            _InfoRow(
+              icon: Icons.store_mall_directory_outlined,
+              title: 'ผู้ส่ง',
+              lines: [senderName, senderAddress, 'โทร: $senderPhone'],
             ),
-            Text(senderAddress),
-            Text("เบอร์โทร: $senderPhone"),
-            const Divider(),
-            Text(
-              "ไรเดอร์: ${riderName.isNotEmpty ? riderName : '-'}",
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text("เบอร์โทร: ${riderPhone.isNotEmpty ? riderPhone : '-'}"),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                SizedBox(
-                  width: 200,
-                  child: Text(
-                    "สถานะ: $status",
-                    style: const TextStyle(color: Colors.green),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                // ปุ่มรายละเอียด (เปิดได้เสมอ) — ถ้าเป็นส่งสำเร็จ จะเปลี่ยนข้อความเป็น "ดูรายละเอียดออเดอร์"
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            ReceivingStatus(uid: uid, rid: rid, oid: oid),
-                      ),
-                    );
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Color(0xffff3b30), width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  child: Text(buttonLabel),
-                ),
+            const SizedBox(height: 8),
+            _InfoRow(
+              icon: Icons.pedal_bike_outlined,
+              title: 'ไรเดอร์',
+              lines: [
+                riderName.isNotEmpty ? riderName : '-',
+                'โทร: ${riderPhone.isNotEmpty ? riderPhone : '-'}',
               ],
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ReceivingStatus(uid: uid, rid: rid, oid: oid),
+                    ),
+                  );
+                },
+                icon: const Icon(
+                  Icons.receipt_long,
+                  color: _OrderlistPageState.kPrimary,
+                ),
+                label: const Text('รายละเอียด'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _OrderlistPageState.kPrimary,
+                  side: const BorderSide(
+                    color: _OrderlistPageState.kPrimary,
+                    width: 1.8,
+                  ),
+                  shape: const StadiumBorder(),
+                ),
+              ),
             ),
           ],
         ),
@@ -283,13 +263,111 @@ class ProductHistoryCard extends StatelessWidget {
   }
 }
 
-Future<DocumentSnapshot?> safeGetDoc(String collection, String? id) async {
-  if (id == null || id.isEmpty) return null;
-  return FirebaseFirestore.instance.collection(collection).doc(id).get();
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final List<String> lines;
+  const _InfoRow({
+    required this.icon,
+    required this.title,
+    required this.lines,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Colors.black54),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              ...lines.map(
+                (t) => Text(t, maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-//-----------------------------------------------------
-// หน้าสินค้ากำลังมาส่ง: แสดงเฉพาะ 3 สถานะตามที่กำหนด
+/// ---------------------------- Tabs ----------------------------
+class _TabItem {
+  final String label;
+  final IconData icon;
+  const _TabItem(this.label, this.icon);
+}
+
+class _TabsBar extends StatelessWidget {
+  final int index;
+  final void Function(int) onChanged;
+  final List<_TabItem> items;
+  const _TabsBar({
+    required this.index,
+    required this.onChanged,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 64,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, i) {
+          final selected = i == index;
+          return Material(
+            color: selected ? _OrderlistPageState.kPrimary : Colors.white,
+            elevation: selected ? 2 : 0,
+            borderRadius: _OrderlistPageState.kRadius,
+            child: InkWell(
+              onTap: () => onChanged(i),
+              borderRadius: _OrderlistPageState.kRadius,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      items[i].icon,
+                      size: 18,
+                      color: selected
+                          ? Colors.white
+                          : _OrderlistPageState.kPrimary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      items[i].label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: selected
+                            ? Colors.white
+                            : _OrderlistPageState.kPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// ---------------------------- IN TRANSIT ----------------------------
 class InTransitTab extends StatefulWidget {
   final String uid;
   final String rid;
@@ -334,7 +412,6 @@ class _InTransitTabState extends State<InTransitTab> {
       for (var orderData in snapshot.docs) {
         final data = orderData.data();
         final status = (data['status'] ?? '').toString();
-
         final isMine =
             data['receiver_id'] == widget.uid || data['rider_id'] == widget.rid;
         if (!isMine) continue;
@@ -386,47 +463,42 @@ class _InTransitTabState extends State<InTransitTab> {
     }
 
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: productReceivedList.length,
       itemBuilder: (context, index) {
         final order = productReceivedList[index];
         final items = (order['item'] is List)
             ? order['item'] as List<dynamic>
             : <dynamic>[];
-
         if (items.isEmpty) return const SizedBox.shrink();
-
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: items.map<Widget>((item) {
-              return ProductHistoryCard(
-                imageUrl: (item['imageUrl'] ?? '').toString(),
-                productDetial: (item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า')
-                    .toString(),
-                senderName: (order['sender_name'] ?? 'ไม่ระบุชื่อ').toString(),
-                senderAddress: (order['sender_address'] ?? 'ไม่ระบุที่อยู่')
-                    .toString(),
-                senderPhone: (order['sender_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์')
-                    .toString(),
-                riderName: (order['rider_name'] ?? 'ไม่ระบุชื่อ').toString(),
-                riderPhone: (order['rider_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์')
-                    .toString(),
-                status: (order['status'] ?? '').toString(),
-                createAt: order['createAt'] ?? '',
-                uid: widget.uid,
-                rid: (order['rider_id'] ?? '').toString(),
-                oid: (order['order_id'] ?? '').toString(),
-              );
-            }).toList(),
-          ),
+        return Column(
+          children: items.map<Widget>((item) {
+            return ProductHistoryCard(
+              imageUrl: (item['imageUrl'] ?? '').toString(),
+              productDetial: (item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า')
+                  .toString(),
+              senderName: (order['sender_name'] ?? 'ไม่ระบุชื่อ').toString(),
+              senderAddress: (order['sender_address'] ?? 'ไม่ระบุที่อยู่')
+                  .toString(),
+              senderPhone: (order['sender_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์')
+                  .toString(),
+              riderName: (order['rider_name'] ?? 'ไม่ระบุชื่อ').toString(),
+              riderPhone: (order['rider_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์')
+                  .toString(),
+              status: (order['status'] ?? '').toString(),
+              createAt: order['createAt'] ?? '',
+              uid: widget.uid,
+              rid: (order['rider_id'] ?? '').toString(),
+              oid: (order['order_id'] ?? '').toString(),
+            );
+          }).toList(),
         );
       },
     );
   }
 }
 
-//-----------------------------------------------------
-// หน้าไรเดอร์ทั้งหมด (แผนที่): เฉพาะสถานะที่กำหนด และแตะหมุดเพื่อดูรายละเอียด
+/// ---------------------------- MAP/RECEIVE ----------------------------
 class MapReceive extends StatefulWidget {
   final String uid, rid;
   const MapReceive({super.key, required this.uid, required this.rid});
@@ -470,6 +542,11 @@ class _MapReceiveState extends State<MapReceive> {
     });
   }
 
+  Future<DocumentSnapshot?> safeGetDoc(String collection, String? id) async {
+    if (id == null || id.isEmpty) return null;
+    return FirebaseFirestore.instance.collection(collection).doc(id).get();
+  }
+
   Future<void> _showOrderDetails({
     required String orderId,
     required Map<String, dynamic> data,
@@ -504,9 +581,9 @@ class _MapReceiveState extends State<MapReceive> {
       builder: (_) {
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.6,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
+          initialChildSize: 0.66,
+          minChildSize: 0.44,
+          maxChildSize: 0.92,
           builder: (ctx, scrollController) {
             return SingleChildScrollView(
               controller: scrollController,
@@ -534,7 +611,10 @@ class _MapReceiveState extends State<MapReceive> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.assignment, color: Colors.red),
+                      const Icon(
+                        Icons.assignment,
+                        color: _OrderlistPageState.kPrimary,
+                      ),
                       const SizedBox(width: 8),
                       Text('Order ID: $orderId'),
                     ],
@@ -599,15 +679,16 @@ class _MapReceiveState extends State<MapReceive> {
                         child: OutlinedButton.icon(
                           icon: const Icon(
                             Icons.info,
-                            color: Color(0xffff3b30),
+                            color: _OrderlistPageState.kPrimary,
                           ),
                           label: const Text('รายละเอียด'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xffff3b30),
+                            foregroundColor: _OrderlistPageState.kPrimary,
                             side: const BorderSide(
-                              color: Color(0xffff3b30),
+                              color: _OrderlistPageState.kPrimary,
                               width: 2,
                             ),
+                            shape: const StadiumBorder(),
                           ),
                           onPressed:
                               (data['rider_id'] ?? '').toString().isNotEmpty
@@ -640,7 +721,6 @@ class _MapReceiveState extends State<MapReceive> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      // หน้าไรเดอร์ทั้งหมด: 4 สถานะ
       stream: FirebaseFirestore.instance
           .collection('orders')
           .where(
@@ -657,14 +737,10 @@ class _MapReceiveState extends State<MapReceive> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return const Center(child: Text('ไม่มีคำสั่งซื้อที่กำลังจัดส่ง'));
         }
-
         final orders = snapshot.data!.docs;
-
-        // เก็บตำแหน่งล่าสุดของ rider ต่อ rider_id (กันหมุดซ้ำ)
         final Map<String, LatLng> riderPositions = {};
         final Map<String, Map<String, dynamic>> riderOrderData = {};
         final Map<String, String> riderOrderId = {};
@@ -676,7 +752,6 @@ class _MapReceiveState extends State<MapReceive> {
         for (var doc in orders) {
           final data = doc.data() as Map<String, dynamic>;
           final riderId = (data['rider_id'] ?? '').toString().trim();
-
           final rLat = double.tryParse('${data['rider_latitude']}');
           final rLng = double.tryParse('${data['rider_longitude']}');
           if (riderId.isNotEmpty && rLat != null && rLng != null) {
@@ -685,8 +760,6 @@ class _MapReceiveState extends State<MapReceive> {
             riderOrderId[riderId] = doc.id;
             riderPos = LatLng(rLat, rLng);
           }
-
-          // โฟกัสผู้รับของเรา ถ้ามีพิกัด
           final bool isMyOrder = data['receiver_id'] == widget.uid;
           if (isMyOrder &&
               receiverPos == null &&
@@ -702,7 +775,6 @@ class _MapReceiveState extends State<MapReceive> {
         }
 
         final List<Marker> markers = [];
-
         if (receiverPos != null) {
           markers.add(
             Marker(
@@ -717,13 +789,11 @@ class _MapReceiveState extends State<MapReceive> {
             ),
           );
         }
-
         for (final entry in riderPositions.entries) {
           final riderId = entry.key;
           final pos = entry.value;
           final orderData = riderOrderData[riderId]!;
           final orderId = riderOrderId[riderId]!;
-
           markers.add(
             Marker(
               point: pos,
@@ -734,7 +804,7 @@ class _MapReceiveState extends State<MapReceive> {
                     _showOrderDetails(orderId: orderId, data: orderData),
                 child: const Icon(
                   Icons.directions_bike_sharp,
-                  color: Colors.red,
+                  color: _OrderlistPageState.kPrimary,
                   size: 36,
                 ),
               ),
@@ -771,23 +841,15 @@ class _MapReceiveState extends State<MapReceive> {
 
         return Padding(
           padding: const EdgeInsets.all(16),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.blueGrey, width: 2),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  spreadRadius: 3,
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+          child: Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: _OrderlistPageState.kRadius,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: _OrderlistPageState.kRadius,
               child: SizedBox(
-                height: 300,
+                height: 320,
                 child: FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
@@ -812,13 +874,11 @@ class _MapReceiveState extends State<MapReceive> {
   }
 }
 
-//-------------------------------------------------------
-// หน้าสินค้าที่เคยได้รับ: แสดงเฉพาะ "ไรเดอร์นำส่งสินค้าแล้ว"
+/// ---------------------------- RECEIVED ----------------------------
 class ReceivedTab extends StatefulWidget {
   final String uid;
   final String rid;
   const ReceivedTab({super.key, required this.uid, required this.rid});
-
   @override
   State<ReceivedTab> createState() => _ReceivedTabState();
 }
@@ -839,16 +899,13 @@ class _ReceivedTabState extends State<ReceivedTab> {
           .collection('orders')
           .where('status', isEqualTo: 'ไรเดอร์นำส่งสินค้าแล้ว')
           .get();
-
       final tempOrder = <Map<String, dynamic>>[];
-
       for (var doc in snapshot.docs) {
         final data = doc.data();
         if (data['receiver_id'] == widget.uid ||
             data['rider_id'] == widget.rid) {
           final senderDoc = await safeGetDoc('users', data['sender_id']);
           final riderDoc = await safeGetDoc('riders', data['rider_id']);
-
           tempOrder.add({
             'order_id': doc.id,
             'item': data['items'] ?? [],
@@ -859,7 +916,7 @@ class _ReceivedTabState extends State<ReceivedTab> {
                 ? senderDoc['phone']
                 : '',
             'sender_address': data['sender_address'] ?? '',
-            'rider_id': data['rider_id'] ?? '', // ✅ เก็บ rider_id
+            'rider_id': data['rider_id'] ?? '',
             'rider_name': riderDoc != null && riderDoc.exists
                 ? riderDoc['fullname']
                 : '',
@@ -871,7 +928,6 @@ class _ReceivedTabState extends State<ReceivedTab> {
           });
         }
       }
-
       setState(() {
         deliveredList = tempOrder;
         _isLoading = false;
@@ -885,54 +941,45 @@ class _ReceivedTabState extends State<ReceivedTab> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (deliveredList.isEmpty) {
+    if (deliveredList.isEmpty)
       return const Center(child: Text('ยังไม่มีรายการที่จัดส่งสำเร็จ'));
-    }
 
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: deliveredList.length,
       itemBuilder: (context, index) {
         final order = deliveredList[index];
         final items = (order['item'] is List)
             ? order['item'] as List<dynamic>
             : <dynamic>[];
-
         if (items.isEmpty) return const SizedBox.shrink();
-
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: items.map<Widget>((item) {
-              return ProductHistoryCard(
-                imageUrl: item['imageUrl'] ?? '',
-                productDetial: item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า',
-                senderName: order['sender_name'] ?? 'ไม่ระบุชื่อ',
-                senderAddress: order['sender_address'] ?? 'ไม่ระบุที่อยู่',
-                senderPhone: order['sender_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์',
-                riderName: order['rider_name'] ?? 'ไม่ระบุชื่อ',
-                riderPhone: order['rider_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์',
-                status: order['status'] ?? '',
-                createAt: order['createAt'] ?? '',
-                uid: widget.uid,
-                rid: (order['rider_id'] ?? '')
-                    .toString(), // ✅ ส่ง rider_id ที่ถูกต้อง
-                oid: (order['order_id'] ?? '')
-                    .toString(), // ✅ ส่ง order_id ที่ถูกต้อง
-              );
-            }).toList(),
-          ),
+        return Column(
+          children: items.map<Widget>((item) {
+            return ProductHistoryCard(
+              imageUrl: item['imageUrl'] ?? '',
+              productDetial: item['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า',
+              senderName: order['sender_name'] ?? 'ไม่ระบุชื่อ',
+              senderAddress: order['sender_address'] ?? 'ไม่ระบุที่อยู่',
+              senderPhone: order['sender_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์',
+              riderName: order['rider_name'] ?? 'ไม่ระบุชื่อ',
+              riderPhone: order['rider_phone'] ?? 'ไม่ระบุเบอร์โทรศัพท์',
+              status: order['status'] ?? '',
+              createAt: order['createAt'] ?? '',
+              uid: widget.uid,
+              rid: (order['rider_id'] ?? '').toString(),
+              oid: (order['order_id'] ?? '').toString(),
+            );
+          }).toList(),
         );
       },
     );
   }
 }
 
-//-------------------------------------------------------
-// ✅ หน้าสินค้าที่ส่ง: แสดงออเดอร์ที่คุณเป็น "ผู้ส่ง" (แม้ไรเดอร์ยังไม่รับงาน)
+/// ---------------------------- SENT ----------------------------
 class SentTab extends StatefulWidget {
   final String uid;
   const SentTab({super.key, required this.uid});
-
   @override
   State<SentTab> createState() => _SentTabState();
 }
@@ -949,24 +996,19 @@ class _SentTabState extends State<SentTab> {
 
   Future<void> _fetchSentOrders() async {
     try {
-      // NOTE: ถ้าต้องการ "ของที่เราส่ง" จริง ๆ ควร where ด้วย sender_id ไม่ใช่ receiver
       final snap = await FirebaseFirestore.instance
           .collection('orders')
-          .where('sender_id', isEqualTo: widget.uid) // ✅ แก้ key ให้ถูก
+          .where('sender_id', isEqualTo: widget.uid)
           .get();
-
       final temp = <Map<String, dynamic>>[];
-
       for (final doc in snap.docs) {
         final data = doc.data();
-
         final senderDoc = await safeGetDoc('users', data['sender_id']);
         final riderId = (data['rider_id'] ?? '').toString();
         DocumentSnapshot? riderDoc;
         if (riderId.isNotEmpty) {
           riderDoc = await safeGetDoc('riders', riderId);
         }
-
         temp.add({
           'order_id': doc.id,
           'item': data['items'] ?? [],
@@ -988,7 +1030,6 @@ class _SentTabState extends State<SentTab> {
           'createAt': data['createAt'],
         });
       }
-
       setState(() {
         _orders = temp;
         _loading = false;
@@ -1002,43 +1043,44 @@ class _SentTabState extends State<SentTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_orders.isEmpty) {
+    if (_orders.isEmpty)
       return const Center(child: Text('ยังไม่มีสินค้าที่คุณส่ง'));
-    }
 
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: _orders.length,
       itemBuilder: (context, index) {
         final order = _orders[index];
         final items = (order['item'] is List)
             ? order['item'] as List<dynamic>
             : <dynamic>[];
-
         if (items.isEmpty) return const SizedBox.shrink();
-
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: items.map<Widget>((it) {
-              return ProductHistoryCard(
-                imageUrl: (it['imageUrl'] ?? '').toString(),
-                productDetial: (it['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า')
-                    .toString(),
-                senderName: (order['sender_name'] ?? '').toString(),
-                senderAddress: (order['sender_address'] ?? '').toString(),
-                senderPhone: (order['sender_phone'] ?? '-').toString(),
-                riderName: (order['rider_name'] ?? '').toString(),
-                riderPhone: (order['rider_phone'] ?? '-').toString(),
-                status: (order['status'] ?? '').toString(),
-                createAt: order['createAt'],
-                uid: widget.uid,
-                rid: (order['rider_id'] ?? '').toString(),
-                oid: (order['order_id'] ?? '').toString(),
-              );
-            }).toList(),
-          ),
+        return Column(
+          children: items.map<Widget>((it) {
+            return ProductHistoryCard(
+              imageUrl: (it['imageUrl'] ?? '').toString(),
+              productDetial: (it['detail'] ?? 'ไม่ระบุรายละเอียดสินค้า')
+                  .toString(),
+              senderName: (order['sender_name'] ?? '').toString(),
+              senderAddress: (order['sender_address'] ?? '').toString(),
+              senderPhone: (order['sender_phone'] ?? '-').toString(),
+              riderName: (order['rider_name'] ?? '').toString(),
+              riderPhone: (order['rider_phone'] ?? '-').toString(),
+              status: (order['status'] ?? '').toString(),
+              createAt: order['createAt'],
+              uid: widget.uid,
+              rid: (order['rider_id'] ?? '').toString(),
+              oid: (order['order_id'] ?? '').toString(),
+            );
+          }).toList(),
         );
       },
     );
   }
+}
+
+// helper used above
+Future<DocumentSnapshot?> safeGetDoc(String collection, String? id) async {
+  if (id == null || id.isEmpty) return null;
+  return FirebaseFirestore.instance.collection(collection).doc(id).get();
 }
